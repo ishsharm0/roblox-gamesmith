@@ -62,6 +62,9 @@ What made it feel right:
 - Landing is a lookahead raycast against pads only, and only while descending.
 - A 0.35 s input buffer: a press just before touchdown starts the charge on landing.
 - After each landing, and after every respawn, the camera turns to frame the next target.
+- The client counts its own landing for aiming. Server-published progress lags ~0.3 s; a press in
+  that gap used to aim at the pad underneath and hop in place (on a pad that sinks after 1 s, a lost
+  heart). The server still decides progress.
 - Procedural poses (`procedural-animation.md`): crouch while charging, stretch on take-off, tuck in
   the air, a flip on long leaps, squash on landing.
 

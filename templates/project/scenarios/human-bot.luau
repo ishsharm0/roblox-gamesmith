@@ -29,7 +29,8 @@ end
 local function ideal(d: number, _stage: number): (number, string)
 	return math.clamp(d / 30, 0, 1), "none"
 end
--- Wait here for hazards a person would wait for (a platform under water, a closing door).
+-- Wait here for hazards a person would wait for (a platform under water, a closing door, a telegraphed
+-- attack). Skipping this makes a precise bot's retries sync with a hazard timer and fail forever.
 local function waitForSafe(_stage: number) end
 -- Start or restart a run from whatever screen is showing.
 local function startRun()
@@ -90,6 +91,17 @@ task.spawn(function()
 			task.wait(prof.react * 0.5) -- a person looks before acting
 			local goal = target()
 			local root = p.Character and p.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+			-- standing on the "next" objective means the server hasn't counted this landing yet: wait for it
+			local wt = os.clock()
+			while
+				goal
+				and root
+				and os.clock() - wt < 0.8
+				and Vector3.new(goal.X - root.Position.X, 0, goal.Z - root.Position.Z).Magnitude < 2.5
+			do
+				task.wait(0.05)
+				goal = target()
+			end
 			if not (goal and root) then
 				task.wait(0.2)
 				continue

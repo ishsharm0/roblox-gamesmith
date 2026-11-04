@@ -140,6 +140,12 @@ the outcome itself (a splash, or the next pad counted, then the respawn settled)
 Also rank spots by failures ÷ attempts, not raw failures: the first beat of a stage is retried after
 every failure later in that stage, so its raw count is always the biggest.
 
+Bots must respect telegraphed hazards the way a person does (wait for the warning to pass), or a
+precise bot's perfectly periodic retries can sync with a hazard's timer and fail the same way forever.
+A run stuck at the action cap with one beat failing ~100% is that, not difficulty. Also attribute
+failures that happen during automatic movement (a bounce, a conveyor) to that movement, not to the
+player's next input; the template harness reports them as `<stage>.<progress> auto`.
+
 Run it long: a full multi-run session passes the 5-minute MCP call limit. Start it in `task.spawn`,
 post progress to a player attribute (`BotReport`, `BotDone`), and poll from a background shell loop.
 

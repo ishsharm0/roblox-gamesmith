@@ -13,6 +13,7 @@ marked **(verified)** were hit and fixed while building Lily Pad Leap (`referenc
 | A press right after landing is ignored **(verified)** | the landing bounce reads as airborne | ray-based grounded check plus an input buffer (~0.35 s) |
 | A swimming player never respawns **(verified)** | a swimmer's root floats near the surface, above a low fall threshold | put the fall line just under standing height, or check the Swimming state |
 | A reset platform is still sunk **(verified)** | a running tween finished after the reset | keep each object's tweens; `:Cancel()` them when restoring |
+| A quick press after landing hops in place **(verified)** | the client aims at "the next objective" from server-published progress, which lags the landing by ~0.3 s | let the client count its own landing for targeting (the server still decides progress) |
 | A moving target is luck to hit **(verified)** | aim assist aims at where it is, not where it will be | lead by sampled velocity x flight time |
 | First action after a respawn goes the wrong way | the camera still faces where the player fell | reframe the camera on every teleport |
 | Touched fires many times or not at all | Touched fires per part contact, and not for anchored-to-anchored or CFrame moves | debounce per character; use spatial queries (`GetPartsInPart`) for zones |
