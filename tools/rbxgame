@@ -1,0 +1,346 @@
+#!/usr/bin/env python3
+"""A Roblox game as files: code in src/, the world in world/*.rbxm, Rojo builds the place.
+
+  rbxgame new <dir> [--name "Game Name"]   scaffold a project from templates/project
+  rbxgame build                             rojo build -> build/<name>.rbxlx
+  rbxgame open                              reuse the project's window, or open the built file hidden
+  rbxgame push                              hot-reload code (every src/ folder in the project) into Studio
+  rbxgame save                              export the world nodes (world/*.rbxm) from Studio to disk
+  rbxgame check                             selene + stylua --check on src/, then every tests/*.luau with lune
+  rbxgame shots [--play] [name ...]         capture the cameras in shots.json -> shots/sheet.jpg
+  rbxgame test <scenario.luau>              playtest: play, run the scenario on the server, console, stop
+  rbxgame tour <tour.txt> [--device "iPhone 1"] [--tag x]   walk the UI: real clicks, state, captures -> one sheet
+  rbxgame doctor                            check the whole setup (Studio, MCP, toolchain, docs) and say how to fix gaps
+
+Run inside a project (the folder with default.project.json). Studio stays hidden: one window per
+project, reopened in place; nothing is brought to the front. World edits made in Studio live only in
+Studio until `rbxgame save` (open does it first), so save before closing anything.
+"""
+import json, os, re, shutil, subprocess, sys, time
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+STUDIO = os.path.join(HERE, "studio")
+SKILL = os.path.dirname(HERE)
+ENV = dict(os.environ, PATH=os.path.expanduser("~/.rokit/bin") + ":" + os.environ.get("PATH", ""))
+
+
+def sh(cmd, check=True, capture=False):
+    r = subprocess.run(cmd, env=ENV, text=True, capture_output=capture)
+    if check and r.returncode != 0:
+        raise SystemExit((r.stdout or "") + (r.stderr or "") + f"\nfailed: {' '.join(cmd)}")
+    return r
+
+
+def project():
+    if not os.path.exists("default.project.json"):
+        raise SystemExit("no default.project.json here; cd into the project (rbxgame new <dir> makes one)")
+    return json.load(open("default.project.json"))
+
+
+def place_path(p):
+    os.makedirs("build", exist_ok=True)
+    return os.path.abspath(os.path.join("build", re.sub(r"[^A-Za-z0-9_-]+", "-", p["name"]) + ".rbxlx"))
+
+
+SERVICES = {"Workspace": "workspace"}
+
+
+def game_path(parts):
+    head = SERVICES.get(parts[0], f'game:GetService("{parts[0]}")')
+    return head + "".join(f'["{x}"]' for x in parts[1:])
+
+
+def nodes(tree, parts=()):
+    """(game path parts, $path) for every node with a $path, children before parents excluded."""
+    for k, v in tree.items():
+        if k.startswith("$") or not isinstance(v, dict):
+            continue
+        here = parts + (k,)
+        if "$path" in v:
+            yield here, v["$path"]
+        else:
+            yield from nodes(v, here)
+
+
+def studio(*args, check=True):
+    return sh([STUDIO, "--studio", os.path.basename(place_path(project())), *args], check=check, capture=True)
+
+
+def studio_window_open(place):
+    r = subprocess.run(["pgrep", "-f", f"localPlaceFile {place}"], capture_output=True, text=True)
+    return [int(x) for x in r.stdout.split()]
+
+
+def cmd_new(a):
+    d = a[0]
+    name = a[a.index("--name") + 1] if "--name" in a else os.path.basename(os.path.abspath(d)).replace("-", " ").title()
+    if os.path.exists(d) and os.listdir(d):
+        raise SystemExit(f"{d} exists and is not empty")
+    shutil.copytree(os.path.join(SKILL, "templates", "project"), d, dirs_exist_ok=True)
+    pj = os.path.join(d, "default.project.json")
+    s = open(pj).read().replace("__GAME_NAME__", name)
+    open(pj, "w").write(s)
+    if shutil.which("git") and not os.path.exists(os.path.join(d, ".git")):
+        subprocess.run(["git", "init", "-q", d])
+    print(f"made {os.path.abspath(d)} ({name}). Next: write CONCEPT.md, then `cd {d} && rbxgame open`.")
+
+
+def cmd_build(a):
+    p = project()
+    out = place_path(p)
+    sh(["rojo", "build", "-o", out])
+    print(f"built {out}")
+    return out
+
+
+def cmd_save(a, quiet=False):
+    p = project()
+    place = place_path(p)
+    if not studio_window_open(place):
+        if not quiet:
+            print("no Studio window has this project open; nothing to save")
+        return
+    for parts, path in nodes(p["tree"]):
+        if path.endswith((".rbxm", ".rbxmx")):
+            r = studio("export", game_path(parts), os.path.abspath(path), check=False)
+            if r.returncode:
+                raise SystemExit("World export failed; preserving the open Studio window.\n" + r.stdout + r.stderr)
+            print((r.stdout or r.stderr).strip().splitlines()[-1] if (r.stdout or r.stderr) else f"saved {path}")
+
+
+def cmd_open(a):
+    p = project()
+    place = place_path(p)
+    pids = studio_window_open(place)
+    if pids:
+        cmd_save(a, quiet=True)
+        cmd_build(a)
+        cmd_push(a)
+        print("reused the existing hidden Studio window; place-level property changes take effect on the next fresh open")
+        return
+    cmd_build(a)
+    print(sh([STUDIO, "open", place], capture=True).stdout.strip())
+
+
+def cmd_push(a):
+    p = project()
+    os.makedirs("build/push", exist_ok=True)
+    pushed = []
+    for parts, path in nodes(p["tree"]):
+        if path.endswith((".rbxm", ".rbxmx", ".json")) or not os.path.isdir(path):
+            continue
+        tmp = {"name": parts[-1], "tree": {"$path": os.path.abspath(path)}}
+        pj = os.path.abspath(f"build/push/{'_'.join(parts)}.project.json")
+        json.dump(tmp, open(pj, "w"))
+        out = pj.replace(".project.json", ".rbxm")
+        sh(["rojo", "build", pj, "-o", out])
+        parent = game_path(parts[:-1])
+        r = subprocess.run([STUDIO, "--studio", os.path.basename(place_path(p)), "luau", "-"], env=ENV, text=True,
+                           capture_output=True,
+                           input=f'local old = {parent}:FindFirstChild("{parts[-1]}") if old then old:Destroy() end return "ok"')
+        if r.returncode:
+            raise SystemExit(r.stdout + r.stderr)
+        r = studio("import", out, parent)
+        pushed.append("/".join(parts))
+    print("pushed: " + ", ".join(pushed) + "  (running scripts restart on the next play)")
+
+
+def cmd_check(a):
+    ok = True
+    from pathlib import Path
+    files = [str(p) for p in Path("src").rglob("*.luau") if "Vendor" not in p.parts]
+    if not files:
+        raise SystemExit("no source files to check")
+    for tool in (["selene", *files], ["stylua", "--check", *files]):
+        r = sh(tool, check=False, capture=True)
+        out = (r.stdout + r.stderr).strip()
+        print(f"== {tool[0]}: {'ok' if r.returncode == 0 else 'problems'}")
+        if r.returncode:
+            ok = False
+            print("\n".join(out.splitlines()[:60]))
+    # pure-rule unit tests (Lune) run with every check, so a changed rule cannot leave a stale test
+    for t in sorted(Path("tests").glob("*.luau")) if Path("tests").is_dir() else []:
+        r = sh(["lune", "run", str(t)], check=False, capture=True)
+        print(f"== lune {t.name}: {'ok' if r.returncode == 0 else 'FAILED'}")
+        if r.returncode:
+            ok = False
+            print("\n".join((r.stdout + r.stderr).strip().splitlines()[:20]))
+    sys.exit(0 if ok else 1)
+
+
+def sheet(paths, out, cols=3):
+    from PIL import Image, ImageDraw, ImageFont
+    ims = [Image.open(x).convert("RGB") for x in paths]
+    w = 640
+    ims = [im.resize((w, int(im.height * w / im.width))) for im in ims]
+    h = max(im.height for im in ims) + 34
+    rows = (len(ims) + cols - 1) // cols
+    S = Image.new("RGB", (cols * w, rows * h), (24, 24, 24))
+    d = ImageDraw.Draw(S)
+    try:
+        font = ImageFont.truetype("/System/Library/Fonts/SFNS.ttf", 22)
+    except OSError:
+        font = ImageFont.load_default()
+    for i, (im, pth) in enumerate(zip(ims, paths)):
+        x, y = (i % cols) * w, (i // cols) * h
+        d.text((x + 10, y + 5), os.path.splitext(os.path.basename(pth))[0], fill=(235, 235, 235), font=font)
+        S.paste(im, (x, y + 34))
+    S.save(out, quality=88)
+
+
+def cmd_shots(a):
+    p = project()
+    play = "--play" in a
+    names = [x for x in a if not x.startswith("--")]
+    cams = json.load(open("shots.json")) if os.path.exists("shots.json") else {}
+    if names:
+        cams = {k: v for k, v in cams.items() if k in names}
+    os.makedirs("shots", exist_ok=True)
+    if play:
+        studio("play"); time.sleep(5)
+    paths = []
+    try:
+        for name, c in cams.items():
+            out = os.path.abspath(f"shots/{name}.png")
+            args = ["shot", out]
+            if "pos" in c:
+                args += ["--pos", ",".join(map(str, c["pos"])), "--look", ",".join(map(str, c.get("look", [0, 0, 0])))]
+            studio(*args)
+            paths.append(out)
+        if not cams:
+            out = os.path.abspath("shots/view.png"); studio("shot", out); paths.append(out)
+    finally:
+        if play:
+            studio("stop", check=False)
+    sheet(paths, "shots/sheet.jpg")
+    print(f"{len(paths)} shots -> {os.path.abspath('shots/sheet.jpg')}")
+
+
+def cmd_test(a):
+    p = project()
+    scen = open(a[0]).read()
+    studio("play"); time.sleep(5)
+    try:
+        r = subprocess.run([STUDIO, "--studio", os.path.basename(place_path(p)), "luau", "-", "--ctx", "Server"],
+                           env=ENV, text=True, capture_output=True, input=scen)
+        print((r.stdout + r.stderr).strip())
+        print("== console")
+        print(studio("console", check=False).stdout.strip()[-6000:])
+        if r.returncode:
+            raise SystemExit(r.returncode)
+    finally:
+        studio("stop", check=False)
+
+
+def cmd_tour(a):
+    """A UI tour file, one step per line (# comments):
+         play | stop | wait <seconds> | shot <name>
+         click <path under PlayerGui>        a real mouse click, e.g. PondHUD.Root.Welcome.Begin
+         client <one line of Luau>           run on the client (set a test-hook attribute, fire a remote)
+         server <one line of Luau>           run on the server (force a state for a screen)
+       --device picks a Studio device-simulator device by name (landscape) for the whole tour."""
+    p = project()
+    place = os.path.basename(place_path(p))
+    tag = a[a.index("--tag") + 1] if "--tag" in a else time.strftime("%H%M%S")
+    dev = a[a.index("--device") + 1] if "--device" in a else None
+    steps = [l.strip() for l in open(a[0]) if l.strip() and not l.strip().startswith("#")]
+    os.makedirs("shots", exist_ok=True)
+
+    def luau(code, ctx="Edit"):
+        return subprocess.run([STUDIO, "--studio", place, "luau", "-", "--ctx", ctx], env=ENV, text=True,
+                              capture_output=True, input=code)
+    if dev:
+        r = luau("local svc=game:GetService('StudioDeviceSimulatorService') for _,id in svc:GetDeviceListAsync() do "
+                 f"local i=svc:GetDeviceInfoAsync(id) if string.find(i.Name, [[{dev}]], 1, true) then svc:SetDeviceAsync(id) "
+                 "task.wait(0.3) svc:SetOrientationAsync(Enum.ScreenOrientation.LandscapeLeft) task.wait(0.3) return i.Name end end return 'no device'")
+        print("device:", (r.stdout or r.stderr).strip())
+    shots = []
+    try:
+        for st in steps:
+            cmd, _, rest = st.partition(" ")
+            if cmd == "play":
+                studio("play"); time.sleep(1)
+            elif cmd == "stop":
+                studio("stop", check=False)
+            elif cmd == "wait":
+                time.sleep(float(rest))
+            elif cmd == "shot":
+                out = os.path.abspath(f"shots/tour-{tag}-{len(shots) + 1:02d}-{rest}.png")
+                studio("shot", out); shots.append(out); print("shot", rest)
+            elif cmd == "click":
+                args = json.dumps({"datamodel_type": "Client", "actions": [
+                    {"action": "moveTo", "instance_path": "LocalPlayer.PlayerGui." + rest},
+                    {"action": "mouseButtonClick", "mouse_button": "left"}]})
+                r = studio("call", "user_mouse_input", args, check=False)
+                if r.returncode:
+                    print("click failed:", rest, (r.stdout + r.stderr).strip()[:200])
+            elif cmd in ("client", "server"):
+                r = luau(rest if "return" in rest else rest + " return 'ok'", "Client" if cmd == "client" else "Server")
+                if r.returncode:
+                    print(f"{cmd} step failed: {rest[:80]} -> {(r.stdout + r.stderr).strip()[:200]}")
+            else:
+                print("unknown tour step:", st)
+    finally:
+        studio("stop", check=False)
+        if dev:
+            luau("game:GetService('StudioDeviceSimulatorService'):StopSimulationAsync() return 'ok'")
+    if shots:
+        sheet(shots, f"shots/tour-{tag}-sheet.jpg")
+        print(f"{len(shots)} screens -> {os.path.abspath(f'shots/tour-{tag}-sheet.jpg')}")
+
+
+def cmd_doctor(a):
+    """Check every dependency; print a fix for each gap. Exit 1 if something required is missing."""
+    import platform
+    ok = True
+    def row(good, label, fix="", required=True):
+        nonlocal ok
+        mark = "ok  " if good else ("MISS" if required else "warn")
+        print(f"[{mark}] {label}" + ("" if good else f"\n       -> {fix}"))
+        if not good and required:
+            ok = False
+    row(platform.system() == "Darwin", f"macOS ({platform.system()})",
+        "the Studio tools drive the macOS app; Windows/Linux are not supported yet")
+    row(sys.version_info >= (3, 9), f"Python {platform.python_version()}", "install Python 3.9+ (brew install python)")
+    app = "/Applications/RobloxStudio.app"
+    row(os.path.isdir(app), "Roblox Studio installed", "install from https://create.roblox.com/landing and sign in once")
+    mcp = os.path.join(app, "Contents/MacOS/StudioMCP")
+    row(os.path.exists(mcp), "Studio's built-in MCP server (StudioMCP)", "update Roblox Studio to the latest version")
+    for tool, how in (("rojo", "rokit add rojo-rbx/rojo"), ("selene", "rokit add Kampfkarren/selene"),
+                      ("stylua", "rokit add JohnnyMorganz/StyLua"), ("lune", "rokit add lune-org/lune")):
+        row(shutil.which(tool, path=ENV["PATH"]) is not None, tool, f"run ./install.sh, or: {how} --global")
+    row(shutil.which("uv") is not None, "uv (research and docs tools)",
+        "curl -LsSf https://astral.sh/uv/install.sh | sh", required=False)
+    row(shutil.which("git") is not None, "git", "xcode-select --install")
+    docs = os.path.expanduser("~/.cache/roblox-gamesmith/creator-docs/content/en-us")
+    row(os.path.isdir(docs), "Roblox creator docs cached (rbxdocs)", "run: rbxdocs sync", required=False)
+    try:
+        import PIL  # noqa: F401
+        row(True, "Pillow (contact sheets)")
+    except ImportError:
+        row(False, "Pillow (contact sheets)", "python3 -m pip install --user pillow", required=False)
+    if os.path.exists(mcp):
+        r = subprocess.run([sys.executable, STUDIO, "list"], text=True, capture_output=True, timeout=60)
+        connected = r.returncode == 0 and '"id"' in r.stdout
+        row(connected, "Studio connected over MCP",
+            "open Studio with a place, then Assistant panel -> ... -> Manage MCP Servers -> "
+            "turn on 'Enable Studio as MCP server'", required=False)
+    on_path = shutil.which("rbxgame") is not None
+    row(on_path, "skill tools on PATH", f'add to your shell profile: export PATH="{HERE}:$PATH"', required=False)
+    print("\nready." if ok else "\nfix the MISS lines above, then run rbxgame doctor again.")
+    sys.exit(0 if ok else 1)
+
+
+def main():
+    a = sys.argv[1:]
+    if not a or a[0] in ("-h", "--help"):
+        print(__doc__); return
+    cmds = {"new": cmd_new, "build": cmd_build, "open": cmd_open, "push": cmd_push, "save": cmd_save,
+            "check": cmd_check, "shots": cmd_shots, "test": cmd_test, "tour": cmd_tour, "doctor": cmd_doctor}
+    if a[0] not in cmds:
+        raise SystemExit(f"unknown command {a[0]}; rbxgame --help")
+    cmds[a[0]](a[1:])
+
+
+if __name__ == "__main__":
+    main()

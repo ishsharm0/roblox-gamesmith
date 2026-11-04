@@ -1,0 +1,35 @@
+{
+  "name": "__GAME_NAME__",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Shared": { "$path": "src/shared" }
+    },
+    "ServerScriptService": {
+      "Server": { "$path": "src/server" }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "Client": { "$path": "src/client" }
+      }
+    },
+    "Workspace": {
+      "$properties": { "StreamingEnabled": true },
+      "Map": { "$path": "world/Map.rbxm" }
+    },
+    "Lighting": {
+      "$properties": {
+        "Technology": "Future",
+        "ClockTime": 14.5,
+        "Brightness": 2.5,
+        "EnvironmentDiffuseScale": 1,
+        "EnvironmentSpecularScale": 1,
+        "GlobalShadows": true
+      },
+      "Atmosphere": { "$className": "Atmosphere", "$properties": { "Density": 0.3, "Offset": 0.25, "Haze": 1.0, "Glare": 0.2, "Color": [0.78, 0.86, 1.0], "Decay": [0.92, 0.82, 0.72] } },
+      "Bloom": { "$className": "BloomEffect", "$properties": { "Intensity": 0.5, "Size": 24, "Threshold": 1.6 } },
+      "Grade": { "$className": "ColorCorrectionEffect", "$properties": { "Saturation": 0.08, "Contrast": 0.06, "Brightness": 0.0 } }
+    },
+    "SoundService": { "$properties": { "RespectFilteringEnabled": true } }
+  }
+}

@@ -1,0 +1,338 @@
+#!/usr/bin/env -S uv run --script --quiet
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["pyyaml>=6"]
+# ///
+"""Roblox's official documentation (github.com/Roblox/creator-docs, CC-BY-4.0), offline and searchable.
+
+  rbxdocs api <Name>[.Member]       engine API: a class, datatype, enum, global or library;
+                                    with .Member, that member in full (TweenService.Create, Enum.EasingStyle)
+  rbxdocs find <text>               API names containing text (classes, members, enums)
+  rbxdocs search <words...> [-n N] [--guides|--api]   ranked full-text search; prints path, title, a matching line
+  rbxdocs read <path|guide> [--section <heading>] [--lines N]   a guide page (front matter and imports stripped)
+  rbxdocs sync                      clone or update the docs now (also happens automatically every 7 days)
+  rbxdocs path                      where the docs live, for your own grep
+
+The docs are cloned once into ~/.cache/roblox-gamesmith/creator-docs (English text only, no images,
+about 35 MB) and refreshed weekly. Use them before relying on memory for any API detail: names,
+parameters, security, deprecation, limits."""
+import os, re, subprocess, sys, time
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(os.environ.get("RBXDOCS_DIR", Path.home() / ".cache/roblox-gamesmith/creator-docs"))
+EN = ROOT / "content/en-us"
+API = EN / "reference/engine"
+KINDS = ("classes", "datatypes", "enums", "globals", "libraries")
+ONE = {"classes": "class", "datatypes": "datatype", "enums": "enum", "globals": "global", "libraries": "library",
+       "constructors": "constructor", "properties": "property", "methods": "method", "functions": "function",
+       "events": "event", "callbacks": "callback", "items": "item"}
+REFRESH = 7 * 86400
+
+
+def git(*args, cwd=None):
+    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+
+
+def sync(force=False):
+    if not (ROOT / ".git").exists():
+        print("rbxdocs: cloning Roblox/creator-docs (text only, one time)...", file=sys.stderr)
+        ROOT.parent.mkdir(parents=True, exist_ok=True)
+        r = git("clone", "-q", "--depth", "1", "--filter=blob:none", "--no-checkout",
+                "https://github.com/Roblox/creator-docs.git", str(ROOT))
+        if r.returncode:
+            sys.exit("rbxdocs: clone failed: " + r.stderr.strip())
+        git("sparse-checkout", "set", "--no-cone", "/content/en-us/", "!/content/en-us/assets/", cwd=ROOT)
+        r = git("checkout", "-q", "main", cwd=ROOT)
+        if r.returncode:
+            sys.exit("rbxdocs: checkout failed: " + r.stderr.strip())
+        (ROOT / ".synced").write_text(str(time.time()))
+        return
+    stamp = ROOT / ".synced"
+    age = time.time() - float(stamp.read_text()) if stamp.exists() else REFRESH + 1
+    if force or age > REFRESH:
+        r = git("pull", "-q", "--depth", "1", "--rebase=false", "origin", "main", cwd=ROOT)
+        if r.returncode == 0:
+            stamp.write_text(str(time.time()))
+        elif force:
+            print("rbxdocs: update failed (offline?): " + r.stderr.strip(), file=sys.stderr)
+
+
+def clean(text):
+    """Roblox doc markup -> plain text: `Class.Foo.Bar|Label` -> Label, `Class.Foo` -> Foo."""
+    if not text:
+        return ""
+    text = re.sub(r"`(?:Class|Datatype|Enum|Global|Library)\.[\w.:]+\|([^`]+)`", r"`\1`", text)
+    text = re.sub(r"`(?:Class|Datatype|Global|Library)\.([\w.:()]+)`", r"`\1`", text)
+    text = re.sub(r"`Enum\.([\w.]+)`", r"`Enum.\1`", text)
+    text = re.sub(r"<img[^>]*>", "", text)
+    text = re.sub(r"\]\((?:\.\./)+", "](docs:", text)
+    return text.strip()
+
+
+def first_line(text):
+    t = clean(text).replace("\n", " ")
+    m = re.match(r"(.+?\.)(\s|$)", t)
+    return (m.group(1) if m else t)[:160]
+
+
+def load(kind, name):
+    p = API / kind / f"{name}.yaml"
+    return yaml.safe_load(p.read_text()) if p.exists() else None
+
+
+def find_entry(name):
+    for kind in KINDS:
+        d = load(kind, name)
+        if d:
+            return kind, d
+    # case-insensitive fallback
+    low = name.lower()
+    for kind in KINDS:
+        for p in (API / kind).glob("*.yaml"):
+            if p.stem.lower() == low:
+                return kind, yaml.safe_load(p.read_text())
+    return None, None
+
+
+def flags(m):
+    out = []
+    if m.get("deprecation_message") or "Deprecated" in (m.get("tags") or []):
+        out.append("DEPRECATED")
+    sec = m.get("security")
+    if isinstance(sec, dict):
+        sec = "/".join(f"{k}:{v}" for k, v in sec.items() if v != "None")
+    if sec and sec != "None":
+        out.append(f"security {sec}")
+    for t in m.get("tags") or []:
+        if t in ("Yields", "ReadOnly", "NotReplicated", "Hidden", "CustomLuaState", "CanYield"):
+            out.append(t)
+    return f"  [{', '.join(out)}]" if out else ""
+
+
+def sig(m):
+    params = ", ".join(f"{p['name']}: {p.get('type') or '?'}" + (f" = {p['default']}" if p.get("default") not in (None, "") else "")
+                       for p in m.get("parameters") or [])
+    rets = ", ".join(r.get("type") or "?" for r in m.get("returns") or [])
+    short = m["name"].split(":")[-1].split(".")[-1]
+    return f"{short}({params})" + (f" -> {rets}" if rets else "")
+
+
+def inherited(d):
+    chain, cur = [], d
+    while cur and cur.get("inherits"):
+        parent = cur["inherits"][0]
+        chain.append(parent)
+        cur = load("classes", parent)
+    return chain
+
+
+def api(arg):
+    sync()
+    name, _, member = arg.partition(".")
+    if name == "Enum" and member:
+        name, member = member, ""
+    kind, d = find_entry(name)
+    if not d and not member:  # a global function such as wait, require or typeof
+        for p in (API / "globals").glob("*.yaml"):
+            g = yaml.safe_load(p.read_text())
+            if any(re.split(r"[:.]", f["name"])[-1] == name for f in g.get("functions") or []):
+                print(f"(global, from {g['name']})")
+                return show_member("globals", g, name)
+    if not d:
+        sys.exit(f"rbxdocs: no API entry named {name}. Try: rbxdocs find {name}")
+    if member:
+        return show_member(kind, d, member)
+    out = [f"{d['name']} ({ONE[kind]}){flags(d)}", clean(d.get("summary"))]
+    if d.get("deprecation_message"):
+        out.append("Deprecated: " + clean(d["deprecation_message"]))
+    if kind == "classes":
+        chain = inherited(d)
+        if chain:
+            out.append("inherits: " + " > ".join(chain))
+        if d.get("tags"):
+            out.append("tags: " + ", ".join(d["tags"]))
+    if kind == "enums":
+        out.append("\nitems:")
+        for it in d.get("items") or []:
+            out.append(f"  {it['name']} = {it.get('value')}{flags(it)}  {first_line(it.get('summary'))}")
+    for section in ("constructors", "properties", "methods", "functions", "events", "callbacks", "math_operations"):
+        items = d.get(section) or []
+        if not items:
+            continue
+        out.append(f"\n{section}:")
+        for m in items:
+            if section == "properties":
+                head = f"{m['name'].split('.')[-1]}: {m.get('type')}"
+            elif section == "math_operations":
+                head = f"{m.get('type_a')} {m.get('operation')} {m.get('type_b')} -> {m.get('return_type')}"
+            else:
+                head = sig(m)
+            out.append(f"  {head}{flags(m)}  {first_line(m.get('summary'))}")
+    out.append(f"\nfull description: rbxdocs api {d['name']}.<Member>  |  file: {API / kind / (d['name'] + '.yaml')}")
+    print("\n".join(out))
+
+
+def show_member(kind, d, member):
+    sections = ("constructors", "properties", "methods", "functions", "events", "callbacks", "items")
+    for section in sections:
+        for m in d.get(section) or []:
+            short = re.split(r"[:.]", m["name"])[-1]
+            if short.lower() == member.lower():
+                out = [f"{d['name']}.{short} ({ONE[section]}){flags(m)}"]
+                if section == "properties":
+                    out.append(f"type: {m.get('type')}" + (f"  default: {m['default']}" if m.get('default') not in (None, '', 'None') else ''))
+                elif section != "items":
+                    out.append(sig(m))
+                    for p in m.get("parameters") or []:
+                        out.append(f"  {p['name']}: {p.get('type')}  {first_line(p.get('summary'))}")
+                    for r in m.get("returns") or []:
+                        out.append(f"  returns {r.get('type')}: {first_line(r.get('summary'))}")
+                if m.get("deprecation_message"):
+                    out.append("Deprecated: " + clean(m["deprecation_message"]))
+                if m.get("thread_safety"):
+                    out.append(f"thread safety: {m['thread_safety']}")
+                out += ["", clean(m.get("description") or m.get("summary"))]
+                print("\n".join(out))
+                return
+    if kind == "classes":
+        for parent in inherited(d):
+            pd = load("classes", parent)
+            for section in sections:
+                for m in (pd or {}).get(section) or []:
+                    if re.split(r"[:.]", m["name"])[-1].lower() == member.lower():
+                        print(f"(inherited from {parent})")
+                        return show_member("classes", pd, member)
+    sys.exit(f"rbxdocs: {d['name']} has no member {member}")
+
+
+def find(text):
+    sync()
+    low, hits = text.lower(), []
+    for kind in KINDS:
+        for p in sorted((API / kind).glob("*.yaml")):
+            if low in p.stem.lower():
+                hits.append(f"{ONE[kind]:9} {p.stem}")
+            if kind in ("classes", "datatypes", "enums"):
+                raw = p.read_text()
+                for m in re.finditer(r"^  - name: ([\w.:]+)$", raw, re.M):
+                    n = m.group(1)
+                    if low in re.split(r"[:.]", n)[-1].lower():
+                        hits.append(f"{'member':9} {n.replace(':', '.') if kind != 'enums' else 'Enum.' + p.stem + '.' + n}")
+    print("\n".join(hits[:80]) if hits else f"no API names contain '{text}'")
+    if len(hits) > 80:
+        print(f"... {len(hits) - 80} more; be more specific")
+
+
+def title_of(p, raw):
+    m = re.search(r"^title:\s*(.+)$", raw, re.M)
+    return m.group(1).strip().strip("'\"") if m else p.stem
+
+
+def search(words, n=12, scope=None):
+    sync()
+    terms = [w.lower() for w in words]
+    files = []
+    if scope != "api":
+        files += [p for p in EN.rglob("*.md") if "/reference/" not in str(p) and "/includes/" not in str(p)]
+    if scope != "guides":
+        files += list(API.rglob("*.yaml"))
+    scored = []
+    for p in files:
+        raw = p.read_text(errors="ignore")
+        low = raw.lower()
+        if not all(t in low for t in terms):
+            continue
+        title = title_of(p, raw) if p.suffix == ".md" else p.stem
+        score = sum(min(low.count(t), 20) for t in terms)
+        score += sum(15 for t in terms if t in title.lower()) + sum(10 for t in terms if t in p.stem.lower())
+        if p.suffix == ".yaml":
+            score += 5
+        line = next((l.strip() for l in raw.splitlines() if all(t in l.lower() for t in terms)), "")
+        if not line:
+            line = next((l.strip() for l in raw.splitlines() if terms[0] in l.lower()), "")
+        scored.append((score, p, title, clean(line)[:150]))
+    scored.sort(key=lambda x: -x[0])
+    for score, p, title, line in scored[:n]:
+        rel = p.relative_to(EN)
+        print(f"{rel}  -  {title}\n    {line}")
+    if not scored:
+        print("no matches; try fewer or different words")
+    elif len(scored) > n:
+        print(f"... {len(scored) - n} more (-n {n * 2})")
+
+
+def read(target, section=None, lines=None):
+    sync()
+    p = Path(target)
+    if not p.is_absolute():
+        cands = [EN / target, EN / (target + ".md")] + sorted(EN.rglob(f"{Path(target).stem}.md"))
+        p = next((c for c in cands if c.is_file()), None)
+        if not p:
+            sys.exit(f"rbxdocs: no page {target}. Try: rbxdocs search {target}")
+    raw = p.read_text()
+    raw = re.sub(r"\A---\n.*?\n---\n", "", raw, flags=re.S)
+    raw = re.sub(r"^import .*\n", "", raw, flags=re.M)
+    raw = clean(raw)
+    if section:
+        parts = re.split(r"(?m)^(#{1,4} .+)$", raw)
+        keep, on, level = [], False, 9
+        for chunk in parts:
+            h = re.match(r"(#{1,4}) (.+)", chunk)
+            if h:
+                if on and len(h.group(1)) <= level:
+                    break
+                if section.lower() in h.group(2).lower() and not on:
+                    on, level = True, len(h.group(1))
+            if on:
+                keep.append(chunk)
+        if not keep:
+            heads = re.findall(r"(?m)^#{1,4} (.+)$", raw)
+            sys.exit(f"rbxdocs: no section '{section}'. Sections: " + "; ".join(heads[:40]))
+        raw = "".join(keep)
+    out = raw.strip().splitlines()
+    print(f"[{p.relative_to(EN)}]")
+    print("\n".join(out[:lines] if lines else out))
+    if lines and len(out) > lines:
+        print(f"... {len(out) - lines} more lines (--lines {lines * 2}, or --section <heading>)")
+
+
+def main():
+    a = sys.argv[1:]
+    if not a or a[0] in ("-h", "--help", "help"):
+        print(__doc__)
+        return
+    def opt(flag, default=None, cast=str):
+        if flag in a:
+            i = a.index(flag)
+            v = cast(a[i + 1])
+            del a[i:i + 2]
+            return v
+        return default
+    cmd = a.pop(0)
+    if cmd == "sync":
+        sync(force=True)
+        print(f"docs at {ROOT}")
+    elif cmd == "path":
+        sync()
+        print(EN)
+    elif cmd == "api" and a:
+        api(a[0])
+    elif cmd == "find" and a:
+        find(" ".join(a))
+    elif cmd == "search" and a:
+        n = opt("-n", 12, int)
+        scope = "guides" if "--guides" in a else "api" if "--api" in a else None
+        a = [x for x in a if x not in ("--guides", "--api")]
+        search(a, n, scope)
+    elif cmd == "read" and a:
+        section, lines = opt("--section"), opt("--lines", None, int)
+        read(a[0], section, lines)
+    else:
+        print(__doc__)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

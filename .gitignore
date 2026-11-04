@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.DS_Store
+build/
+shots/
+!docs/images/
+sourcemap.json
+*.lock
+!wally.lock

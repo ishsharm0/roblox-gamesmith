@@ -1,0 +1,271 @@
+#!/usr/bin/env python3
+"""Talk to Roblox Studio's built-in MCP server from the shell.
+
+  studio tools                         list the tools and their arguments
+  studio list                          connected Studio windows (studio_id, name, place id)
+  studio call <tool> '<json args>'     call any tool; images are saved, text is printed
+  studio luau <file.luau|-> [--ctx Edit|Server|Client]   run Luau (Server/Client while playtesting)
+  studio shot [out.png] [--pos x,y,z --look x,y,z]       capture the viewport, optionally from a camera
+  studio schema <tool>                 one tool's full input schema
+  studio state | play | stop | console
+  studio open <place.rbxl|.rbxlx>      open a local place file in a new Studio window and wait for it
+  studio export <game.Path> <out.rbxm> serialize an instance (a map, a model) to a model file on disk
+  studio import <in.rbxm> [game.Path]  load a model file into the open place (default parent: Workspace)
+
+Studio must be running with a place open and "Enable Studio as MCP server" on (Assistant -> ... ->
+Manage MCP Servers). With several Studio windows open, pass --studio <id or name> to make that one
+active; otherwise Studio's active one is used. Every call starts StudioMCP over stdio, so no Claude Code restart is
+needed after Studio starts.
+"""
+import base64, json, os, subprocess, sys, time, selectors
+from pathlib import Path
+
+BIN = "/Applications/RobloxStudio.app/Contents/MacOS/StudioMCP"
+APP = "/Applications/RobloxStudio.app/Contents/MacOS/RobloxStudio"
+B64 = Path(__file__).resolve().parent.joinpath("luau", "b64.luau").read_text()
+CHUNK = 60_000   # characters of base64 per execute_luau round trip (its text result is cut at ~100k)
+
+
+class MCP:
+    def __init__(self):
+        self.p = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL, bufsize=0)
+        self.n = 0
+        self.req("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
+                                "clientInfo": {"name": "studio-cli", "version": "1.0"}})
+        self.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+    def send(self, msg):
+        self.p.stdin.write((json.dumps(msg) + "\n").encode())
+        self.p.stdin.flush()
+
+    def req(self, method, params, timeout=600):
+        self.n += 1
+        my = self.n
+        self.send({"jsonrpc": "2.0", "id": my, "method": method, "params": params})
+        t0 = time.time()
+        selector = selectors.DefaultSelector()
+        selector.register(self.p.stdout, selectors.EVENT_READ)
+        while time.time() - t0 < timeout:
+            if not selector.select(max(0, timeout - (time.time() - t0))):
+                break
+            line = self.p.stdout.readline()
+            if not line:
+                raise SystemExit("StudioMCP closed the connection (is Studio running with a place open?)")
+            try:
+                msg = json.loads(line)
+            except ValueError:
+                continue
+            if msg.get("id") == my:
+                if "error" in msg:
+                    raise SystemExit(f"error: {msg['error'].get('message', msg['error'])}")
+                return msg["result"]
+        raise SystemExit(f"timed out after {timeout}s waiting for {method}")
+
+    def close(self):
+        try:
+            self.p.stdin.close(); self.p.terminate()
+            self.p.wait(timeout=3)
+        except Exception:
+            pass
+
+
+def hide_studio():
+    subprocess.run(["osascript", "-e", 'tell application "System Events" to set visible of '
+                    '(every process whose name contains "RobloxStudio") to false'],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def studios(m, wait=12):
+    # Studio dials the StudioMCP process we just started and retries every ~3 s, so the first
+    # answers can be empty; keep asking for a few seconds before saying nothing is connected.
+    t0 = time.time()
+    while True:
+        r = m.req("tools/call", {"name": "list_roblox_studios", "arguments": {}})
+        txt = "\n".join(c.get("text", "") for c in r.get("content", []) if c.get("type") == "text")
+        if '"studios":[]' not in txt.replace(" ", "") or time.time() - t0 > wait:
+            return txt
+        time.sleep(1)
+
+
+def pick_studio(m, want):
+    txt = studios(m)
+    try:
+        data = json.loads(txt)
+    except ValueError:
+        data = None
+    items = []
+    if isinstance(data, dict):
+        data = data.get("studios") or data.get("instances") or list(data.values())[0]
+    if isinstance(data, list):
+        items = data
+    if not items:
+        raise SystemExit("no Studio connected:\n" + txt)
+    def sid(it):
+        return str(it.get("studio_id") or it.get("id") or it.get("instance_id") or it.get("studioId"))
+    if want:
+        for it in items:
+            if want in (sid(it), str(it.get("name")), str(it.get("place_id") or it.get("placeId"))):
+                return sid(it)
+        raise SystemExit(f"Studio {want!r} is not connected; refusing to select another window.\n" + txt)
+    if len(items) > 1:   # several windows (the start page counts): take the first with a place open
+        for it in items:
+            r = m.req("tools/call", {"name": "get_studio_state", "arguments": {"studio_id": sid(it)}})
+            body = " ".join(c.get("text", "") for c in r.get("content", []))
+            if not r.get("isError") and "not open" not in body.lower():
+                return sid(it)
+    return sid(items[0])
+
+
+def show(result, out=None):
+    k = 0
+    for c in result.get("content", []):
+        if c.get("type") == "text":
+            print(c["text"])
+        elif c.get("type") == "image":
+            path = out if (out and k == 0) else (out or "studio-shot.png").replace(".png", f"-{k}.png")
+            with open(path, "wb") as f:
+                f.write(base64.b64decode(c["data"]))
+            print(f"image saved: {os.path.abspath(path)}")
+            k += 1
+    if result.get("isError"):
+        sys.exit(1)
+
+
+def main():
+    a = sys.argv[1:]
+    if not a or a[0] in ("-h", "--help"):
+        print(__doc__); return
+    want = None
+    if "--studio" in a:
+        i = a.index("--studio"); want = a[i + 1]; del a[i:i + 2]
+    cmd = a[0]
+    if cmd == "open":
+        place = os.path.abspath(a[1])
+        # -g: don't bring Studio to the front; -j: launch hidden. The person is using this Mac, so Studio
+        # must never pop over their windows; it is hidden again once it reports the place open.
+        subprocess.run(["open", "-g", "-j", "-n", "/Applications/RobloxStudio.app", "--args",
+                        "-task", "EditFile", "-localPlaceFile", place], check=True)
+        t0 = time.time()
+        while time.time() - t0 < 180:
+            time.sleep(5)
+            m = MCP()
+            try:
+                txt = studios(m, wait=6)
+                for it in json.loads(txt).get("studios", []):
+                    r = m.req("tools/call", {"name": "get_studio_state", "arguments": {"studio_id": it["id"]}})
+                    body = " ".join(c.get("text", "") for c in r.get("content", []))
+                    if not r.get("isError") and "not open" not in body.lower():
+                        if it.get('name') not in (os.path.basename(place), Path(place).stem):
+                            continue
+                        hide_studio()
+                        print(f"open: {place} (studio {it['id']})"); return
+            except (SystemExit, ValueError):
+                pass
+            finally:
+                m.close()
+        raise SystemExit("Studio did not report an open place within 3 minutes")
+    m = MCP()
+    try:
+        if cmd == "tools":
+            r = m.req("tools/list", {})
+            for t in r["tools"]:
+                props = t.get("inputSchema", {}).get("properties", {})
+                req = set(t.get("inputSchema", {}).get("required", []))
+                args = ", ".join((p + ("*" if p in req else "")) for p in props)
+                print(f"{t['name']}({args})\n    {(t.get('description') or '').splitlines()[0][:200]}")
+            return
+        if cmd == "schema":
+            r = m.req("tools/list", {})
+            for t in r["tools"]:
+                if t["name"] == a[1]:
+                    print(json.dumps(t, indent=1))
+            return
+        if cmd == "list":
+            print(studios(m)); return
+        schema = {t["name"]: t.get("inputSchema", {}).get("properties", {}) for t in m.req("tools/list", {})["tools"]}
+        sid = None
+        if want or any("studio_id" in v for v in schema.values()):
+            sid = pick_studio(m, want)
+        if want and "set_active_studio" in schema:
+            show(m.req("tools/call", {"name": "set_active_studio", "arguments": {"studio_id": sid}}))
+        def call(name, args, out=None):
+            args = dict(args)
+            if sid and "studio_id" in schema.get(name, {}):   # newer Studio builds want it on every call
+                args["studio_id"] = sid
+            show(m.req("tools/call", {"name": name, "arguments": args}), out)
+        if cmd == "call":
+            call(a[1], json.loads(a[2]) if len(a) > 2 else {})
+        elif cmd == "luau":
+            ctx = "Edit"
+            if "--ctx" in a:
+                i = a.index("--ctx"); ctx = a[i + 1]; del a[i:i + 2]
+            src = sys.stdin.read() if a[1] == "-" else open(a[1]).read()
+            args = {"code": src}
+            if "datamodel_type" in schema.get("execute_luau", {}):
+                args["datamodel_type"] = ctx
+            call("execute_luau", args)
+        elif cmd == "shot":
+            out = next((x for x in a[1:] if x.endswith(".png")), "studio-shot.png")
+            args = {"capture_id": "ScreenCapture_" + str(int(time.time() * 1000))}
+            if "--pos" in a:
+                args["camera_position"] = [float(x) for x in a[a.index("--pos") + 1].split(",")]
+                look = a[a.index("--look") + 1] if "--look" in a else "0,0,0"
+                args["look_at_position"] = [float(x) for x in look.split(",")]
+            call("screen_capture", args, out)
+        elif cmd in ("export", "import"):
+            ctx = {"datamodel_type": "Edit"} if "datamodel_type" in schema.get("execute_luau", {}) else {}
+            def luau(code):
+                r = m.req("tools/call", {"name": "execute_luau", "arguments": dict(ctx, code=code, **({"studio_id": sid} if sid else {}))})
+                txt = "".join(c.get("text", "") for c in r.get("content", []) if c.get("type") == "text")
+                if r.get("isError"):
+                    raise SystemExit(txt)
+                return txt
+            if cmd == "export":
+                path, out = a[1], a[2]
+                n = int(luau(B64 + f"""
+local inst = {path}
+local data = encode(game:GetService("SerializationService"):SerializeInstancesAsync({{inst}}))
+shared.__studio_cli_export = data
+return tostring(#data)""").strip().split()[-1])
+                parts = []
+                for i in range(0, n, CHUNK):
+                    parts.append(luau(f"return string.sub(shared.__studio_cli_export, {i + 1}, {min(n, i + CHUNK)})").strip())
+                luau("shared.__studio_cli_export = nil return 'ok'")
+                raw = base64.b64decode("".join(parts))
+                with open(out, "wb") as f:
+                    f.write(raw)
+                print(f"exported {path} -> {os.path.abspath(out)} ({len(raw):,} bytes)")
+            else:
+                src, parent = a[1], (a[2] if len(a) > 2 else "workspace")
+                data = base64.b64encode(open(src, "rb").read()).decode()
+                luau("shared.__studio_cli_import = {} return 'ok'")
+                for i in range(0, len(data), CHUNK):
+                    luau(f"table.insert(shared.__studio_cli_import, [[{data[i:i + CHUNK]}]]) return 'ok'")
+                print(luau(B64 + f"""
+local buf = decode(table.concat(shared.__studio_cli_import))
+shared.__studio_cli_import = nil
+local CHS = game:GetService("ChangeHistoryService")
+local rec = CHS:TryBeginRecording("studio import")
+local list = game:GetService("SerializationService"):DeserializeInstancesAsync(buf)
+for _, inst in list do inst.Parent = {parent} end
+if rec then CHS:FinishRecording(rec, Enum.FinishRecordingOperation.Commit) end
+local names = {{}}
+for _, inst in list do table.insert(names, inst:GetFullName()) end
+return "imported " .. table.concat(names, ", ")""").strip())
+        elif cmd == "state":
+            call("get_studio_state", {})
+        elif cmd in ("play", "stop"):
+            call("start_stop_play", {"is_start": cmd == "play"})
+            hide_studio()   # entering or leaving play mode can surface the window
+        elif cmd == "console":
+            call("get_console_output", {})
+        else:
+            raise SystemExit(f"unknown command {cmd}; see studio --help")
+    finally:
+        hide_studio()
+        m.close()
+
+
+if __name__ == "__main__":
+    main()

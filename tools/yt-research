@@ -1,0 +1,413 @@
+#!/usr/bin/env -S uv run --script --quiet
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["yt-dlp[default]>=2026.10.0", "pillow>=10.1"]
+# ///
+"""yt-research: light YouTube research for game design (search, transcripts, frames).
+
+Commands:
+  search "<query>" [-n 10]      ranked results with date, views, duration, channel, url
+  devlog "<topic>"              Roblox devlog + Studio tutorial search for a topic
+  brief <url>                   English transcript with timestamps + N frames on a labelled
+                                contact sheet. Frames are grabbed by seeking the lowest
+                                reasonable (<=360p) stream; only stills are kept, never video.
+
+Files go to ./.yt-research/<videoId>-<slug>/ (override with --out).
+Respect YouTube: research a handful of videos, not channels. No login, no cookies.
+"""
+
+import argparse
+import base64
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+from _common import clip, contact_sheet, fmt_dur, fmt_num, slugify  # noqa: E402
+
+import yt_dlp  # noqa: E402
+
+BASE_OPTS = {"quiet": True, "no_warnings": True, "noprogress": True, "noplaylist": True}
+# Lowest reasonable quality for stills: 360p video-only, H.264 preferred for fast decode.
+FRAME_FORMAT = ("bv*[height<=360][height>=240][vcodec^=avc1]/bv*[height<=360][height>=240]/"
+                "bv*[height<=480]/b[height<=480]/worst")
+WITHIN = {"hour": 1, "day": 2, "week": 3, "month": 4, "year": 5}
+DURATION = {"short": 1, "long": 2, "medium": 3}
+SORT = {"date": 2, "views": 3}
+
+
+def ydl(extra=None):
+    o = dict(BASE_OPTS)
+    o.update(extra or {})
+    return yt_dlp.YoutubeDL(o)
+
+
+# ---------------------------------------------------------------- search
+
+def search_url(query, within, sort, duration):
+    """Build a youtube.com/results URL with the same `sp` filter the site's filter menu produces."""
+    filt = b""
+    if within != "any":
+        filt += bytes([0x08, WITHIN[within]])
+    filt += b"\x10\x01"  # type = video (no channels/playlists)
+    if duration:
+        filt += bytes([0x18, DURATION[duration]])
+    msg = (bytes([0x08, SORT[sort]]) if sort in SORT else b"") + bytes([0x12, len(filt)]) + filt
+    sp = base64.b64encode(msg).decode()
+    return "https://www.youtube.com/results?" + urllib.parse.urlencode({"search_query": query, "sp": sp})
+
+
+def video_meta(vid):
+    """Upload date / exact views for one video (metadata only, no formats resolved)."""
+    opts = {"skip_download": True, "extractor_args": {"youtube": {"skip": ["dash", "hls", "translated_subs"]}}}
+    try:
+        with ydl(opts) as y:
+            info = y.extract_info(f"https://www.youtube.com/watch?v={vid}", download=False, process=False)
+        return {"upload_date": info.get("upload_date"), "view_count": info.get("view_count"),
+                "like_count": info.get("like_count")}
+    except Exception:
+        return {}
+
+
+def run_search(query, n, within, sort, duration, dates, min_seconds):
+    url = search_url(query, within, sort, duration)
+    with ydl({"extract_flat": "in_playlist", "playlistend": n + 10}) as y:
+        info = y.extract_info(url, download=False)
+    entries = [e for e in (info.get("entries") or []) if e.get("id") and len(e["id"]) == 11]
+    if min_seconds:
+        entries = [e for e in entries if (e.get("duration") or 0) >= min_seconds]
+    entries = entries[:n]
+    if dates and entries:
+        with ThreadPoolExecutor(6) as ex:
+            for e, m in zip(entries, ex.map(lambda e: video_meta(e["id"]), entries)):
+                e.update({k: v for k, v in m.items() if v is not None})
+    return entries
+
+
+def fmt_date(d):
+    return f"{d[:4]}-{d[4:6]}-{d[6:]}" if d and len(d) == 8 else "????-??-??"
+
+
+def print_results(entries):
+    if not entries:
+        print("  no results")
+        return
+    for i, e in enumerate(entries, 1):
+        print(f"{i:>3}. {fmt_date(e.get('upload_date'))} {fmt_num(e.get('view_count')):>6} views {fmt_dur(e.get('duration')):>7}"
+              f"  {clip(e.get('channel') or e.get('uploader') or '?', 22):<22} | {clip(e.get('title'), 80)}")
+        print(f"      https://youtu.be/{e['id']}")
+
+
+def cmd_search(args):
+    entries = run_search(args.query, args.n, args.within, args.sort, args.duration, not args.no_dates, args.min_seconds)
+    print(f"# youtube '{args.query}' within={args.within} sort={args.sort}" + (f" duration={args.duration}" if args.duration else ""))
+    print_results(entries)
+
+
+def cmd_devlog(args):
+    kinds = ["devlog", "tutorial"] if args.kind == "both" else [args.kind]
+    seen = set()
+    for kind in kinds:
+        q = f"roblox {args.topic} devlog" if kind == "devlog" else f"roblox studio {args.topic} tutorial"
+        entries = [e for e in run_search(q, args.n, args.within, "relevance", None, not args.no_dates, 60) if e["id"] not in seen]
+        seen.update(e["id"] for e in entries)
+        print(f"# {kind}: '{q}' within={args.within}")
+        print_results(entries)
+
+
+# ---------------------------------------------------------------- brief
+
+def pick_subs(info, lang):
+    """Prefer human subtitles, then the original-language auto captions. Returns (kind, lang, url)."""
+    def ok(k):
+        return k == lang or k.startswith(lang + "-")
+
+    for kind, table in (("manual", info.get("subtitles") or {}), ("auto", info.get("automatic_captions") or {})):
+        keys = [k for k in table if ok(k) and k != "live_chat"]
+        if kind == "auto":
+            keys.sort(key=lambda k: (k != f"{lang}-orig", k != lang, k))
+        else:
+            keys.sort(key=lambda k: (k != lang, k))
+        for k in keys:
+            for f in table[k]:
+                if f.get("ext") == "json3" and f.get("url"):
+                    return kind, k, f["url"]
+    return None, None, None
+
+
+def parse_json3(raw):
+    d = json.loads(raw)
+    out = []
+    for ev in d.get("events", []):
+        segs = ev.get("segs")
+        if not segs:
+            continue
+        text = "".join(s.get("utf8", "") for s in segs).replace("\n", " ").strip()
+        if text:
+            out.append((ev.get("tStartMs", 0) / 1000.0, text))
+    return out
+
+
+def paragraphs(cues, span=25.0):
+    """Merge caption cues into timestamped paragraphs of roughly `span` seconds."""
+    paras, cur, start = [], [], None
+    for t, text in cues:
+        if start is None:
+            start = t
+        cur.append(text)
+        joined = " ".join(cur)
+        elapsed = t - start
+        if (elapsed >= span and re.search(r"[.!?]$", text)) or elapsed >= span * 1.5:
+            paras.append((start, joined))
+            cur, start = [], None
+    if cur:
+        paras.append((start, " ".join(cur)))
+    cleaned = []
+    for t, p in paras:
+        p = re.sub(r"\s+", " ", p)
+        p = re.sub(r"(\[(?:Music|Applause|Laughter)\]\s*)+", lambda m: m.group(1), p)
+        cleaned.append((t, p.strip()))
+    return cleaned
+
+
+def ts(sec):
+    return fmt_dur(sec).rjust(5, "0") if sec < 3600 else fmt_dur(sec)
+
+
+def chapter_at(chapters, t):
+    for c in chapters or []:
+        if c.get("start_time", 0) <= t < c.get("end_time", 1e12):
+            return c.get("title")
+    return None
+
+
+def grab_frame(src, t, dest, headers=None):
+    cmd = ["ffmpeg", "-v", "error", "-y"]
+    if headers:
+        cmd += ["-headers", "".join(f"{k}: {v}\r\n" for k, v in headers.items() if k.lower() in ("user-agent", "referer", "origin"))]
+    cmd += ["-ss", f"{t:.2f}", "-i", src, "-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "4", dest]
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        return False
+    return r.returncode == 0 and os.path.exists(dest) and os.path.getsize(dest) > 0
+
+
+def download_lowres(url, workdir):
+    """Download the low-res stream once; only used when stream seeking fails. Caller deletes it."""
+    opts = {"format": FRAME_FORMAT, "outtmpl": os.path.join(workdir, "lowres.%(ext)s"), "noplaylist": True}
+    with ydl(opts) as y:
+        info = y.extract_info(url, download=True)
+        return y.prepare_filename(info)
+
+
+def frame_features(path):
+    """Tiny colour layout vector + mean brightness, for picking visually distinct stills."""
+    from PIL import Image
+    im = Image.open(path).convert("RGB").resize((8, 6))
+    px = list(im.tobytes())
+    return px, sum(px) / len(px)
+
+
+def most_distinct(cands, n):
+    """Greedy farthest-point selection over frame features; skips near-black/white frames."""
+    feats = {}
+    for t, p in cands:
+        try:
+            vec, mean = frame_features(p)
+        except Exception:
+            continue
+        if 12 < mean < 245:
+            feats[t] = vec
+    if not feats:
+        return [t for t, _ in cands][:n]
+    keys = sorted(feats)
+    chosen = [keys[0]]
+    dist = {k: float("inf") for k in keys}
+    while len(chosen) < min(n, len(keys)):
+        last = feats[chosen[-1]]
+        for k in keys:
+            if k not in chosen:
+                dist[k] = min(dist[k], sum((a - b) ** 2 for a, b in zip(feats[k], last)))
+        chosen.append(max((k for k in keys if k not in chosen), key=lambda k: dist[k]))
+    return sorted(chosen)
+
+
+def spaced(dur, n):
+    lo, hi = dur * 0.03, dur * 0.97
+    return [lo + (hi - lo) * (i + 0.5) / n for i in range(n)] if dur else [0.0]
+
+
+def capture(src, times, fdir, headers=None, workers=4):
+    def job(t):
+        p = os.path.join(fdir, f"t{int(t):05d}.jpg")
+        return (t, p) if grab_frame(src, t, p, headers) else None
+
+    with ThreadPoolExecutor(workers) as ex:
+        got = [r for r in ex.map(job, times) if r]
+    done = {t for t, _ in got}
+    missed = [t for t in times if t not in done]
+    if got and missed:  # transient failures under parallel load: retry the misses one at a time
+        got += [r for r in map(job, missed) if r]
+    return sorted(got)
+
+
+def cmd_brief(args):
+    with ydl({"format": FRAME_FORMAT}) as y:
+        info = y.extract_info(args.url, download=False)
+        vid, title = info["id"], info.get("title") or ""
+        dur = info.get("duration") or 0
+        outdir = os.path.join(args.out, f"{vid}-{slugify(title, 30)}")
+        os.makedirs(os.path.join(outdir, "frames"), exist_ok=True)
+
+        kind, sublang, suburl = pick_subs(info, args.lang)
+        paras = []
+        if suburl:
+            try:
+                raw = y.urlopen(suburl).read().decode("utf-8", "replace")
+                paras = paragraphs(parse_json3(raw), args.span)
+            except Exception as e:  # captions fetch can 429; the brief is still useful without them
+                print(f"  ! captions download failed: {e}", file=sys.stderr)
+
+    chapters = info.get("chapters") or []
+    meta = [
+        f"# {title}",
+        f"url: https://youtu.be/{vid}   channel: {info.get('channel')} ({fmt_num(info.get('channel_follower_count'))} subs)",
+        f"uploaded: {fmt_date(info.get('upload_date'))}   duration: {fmt_dur(dur)}   views: {fmt_num(info.get('view_count'))}"
+        f"   likes: {fmt_num(info.get('like_count'))}   comments: {fmt_num(info.get('comment_count'))}",
+    ]
+    if info.get("tags"):
+        meta.append("tags: " + clip(", ".join(info["tags"][:20]), 300))
+    if chapters:
+        meta.append("chapters:")
+        meta += [f"  {ts(c.get('start_time', 0))} {c.get('title')}" for c in chapters[:40]]
+    desc = (info.get("description") or "").strip()
+    meta.append("description: " + (clip(re.sub(r"\n\s*\n+", "\n", desc), args.desc_chars) or "(empty)"))
+
+    # transcript
+    tpath = os.path.join(outdir, "transcript.txt")
+    if paras:
+        words = sum(len(p.split()) for _, p in paras)
+        with open(tpath, "w") as f:
+            f.write(f"# {title} - {kind} captions ({sublang}) - https://youtu.be/{vid}\n")
+            for t, p in paras:
+                f.write(f"[{ts(t)}] {p}\n")
+        meta.append(f"transcript: {kind} {sublang}, {len(paras)} paragraphs, {words} words -> {os.path.abspath(tpath)}")
+    else:
+        tpath = None
+        meta.append("transcript: none available in English (no speech, captions disabled, or rate-limited)")
+
+    # frames: seek inside the <=360p stream so only the needed byte ranges are fetched
+    frames, method = [], ""
+    n = max(1, args.frames)
+    fdir = os.path.join(outdir, "frames")
+    for old in os.listdir(fdir):
+        os.remove(os.path.join(fdir, old))
+    if not args.no_frames:
+        times = spaced(dur, n * 3 if args.scenes else n)
+        src, headers = info.get("url"), info.get("http_headers")
+        cands = capture(src, times, fdir, headers, workers=6 if args.scenes else 4) if src else []
+        how = "seeked from the 360p stream"
+        if len(cands) < len(times) // 2 and dur <= args.max_download_minutes * 60:
+            # Seeking failed (throttled or expired URL): fetch the low-res file once, then delete it.
+            work = os.path.join(outdir, ".work")
+            os.makedirs(work, exist_ok=True)
+            try:
+                cands = capture(download_lowres(args.url, work), times, fdir)
+                how = "from a temporary low-res download (deleted)"
+            finally:
+                shutil.rmtree(work, ignore_errors=True)
+        if args.scenes and cands:
+            keep = set(most_distinct(cands, n))
+            for t, p in cands:
+                if t not in keep:
+                    os.remove(p)
+            frames = [(t, p) for t, p in cands if t in keep]
+            method = f"{len(frames)} most visually distinct of {len(cands)} samples, {how}"
+        else:
+            frames = cands
+            method = f"evenly spaced, {how}"
+
+    sheet = None
+    if frames:
+        frames.sort()
+        items = []
+        for t, p in frames:
+            ch = chapter_at(chapters, t)
+            items.append((p, f"{ts(t)}" + (f"  {ch}" if ch else "")))
+        sheet = contact_sheet(items, os.path.join(outdir, "sheet.jpg"), title=title,
+                              subtitle=f"{info.get('channel')} - {fmt_date(info.get('upload_date'))} - {fmt_dur(dur)} - youtu.be/{vid}",
+                              cols=args.cols, tile_w=480, tile_h=270)
+        meta.append(f"frames: {method} -> {os.path.abspath(sheet)}")
+    elif not args.no_frames:
+        meta.append("frames: none captured")
+
+    with open(os.path.join(outdir, "meta.txt"), "w") as f:
+        f.write("\n".join(meta) + "\n")
+    print("\n".join(meta))
+    if tpath:
+        with open(tpath) as f:
+            lines = f.read().splitlines()[1:]
+        show = lines if args.cat else lines[: args.head]
+        if show:
+            print("\n## transcript" + ("" if args.cat or len(lines) <= args.head else f" (first {args.head} of {len(lines)} lines; --cat for all)"))
+            print("\n".join(show))
+
+
+# ---------------------------------------------------------------- cli
+
+def main():
+    ap = argparse.ArgumentParser(prog="yt-research", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--out", default=".yt-research", help="output dir (default ./.yt-research)")
+    shared = argparse.ArgumentParser(add_help=False)
+    shared.add_argument("--out", default=argparse.SUPPRESS, help="output dir (default ./.yt-research)")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    _add = sub.add_parser
+    sub.add_parser = lambda *a, **k: _add(*a, parents=[shared], **k)
+
+    s = sub.add_parser("search", help="search YouTube videos")
+    s.add_argument("query")
+    s.add_argument("-n", type=int, default=10, help="results (default 10)")
+    s.add_argument("--within", choices=["any", *WITHIN], default="year", help="upload date filter (default year)")
+    s.add_argument("--sort", choices=["relevance", "date", "views"], default="relevance")
+    s.add_argument("--duration", choices=list(DURATION), help="short <4min, medium 4-20min, long >20min")
+    s.add_argument("--min-seconds", type=int, default=0, help="drop results shorter than this (e.g. 61 to skip Shorts)")
+    s.add_argument("--no-dates", action="store_true", help="skip per-video upload-date lookup (faster)")
+
+    d = sub.add_parser("devlog", help="Roblox devlogs and Studio tutorials on a topic")
+    d.add_argument("topic", help='e.g. "tycoon droppers", "obby checkpoints", "pet hatching"')
+    d.add_argument("-n", type=int, default=6, help="results per kind (default 6)")
+    d.add_argument("--kind", choices=["devlog", "tutorial", "both"], default="both")
+    d.add_argument("--within", choices=["any", *WITHIN], default="any")
+    d.add_argument("--no-dates", action="store_true")
+
+    b = sub.add_parser("brief", help="transcript + frame contact sheet for one video")
+    b.add_argument("url")
+    b.add_argument("--frames", type=int, default=12, help="stills to capture (default 12)")
+    b.add_argument("--cols", type=int, default=3, help="contact sheet columns (default 3)")
+    b.add_argument("--scenes", action="store_true",
+                   help="sample 3x as many points and keep the most visually distinct (covers different areas/UI screens)")
+    b.add_argument("--max-download-minutes", type=int, default=20,
+                   help="if seeking fails, allow a temporary low-res download only for videos up to this length (default 20)")
+    b.add_argument("--no-frames", action="store_true", help="transcript and metadata only")
+    b.add_argument("--lang", default="en", help="caption language (default en)")
+    b.add_argument("--span", type=float, default=25.0, help="seconds per transcript paragraph (default 25)")
+    b.add_argument("--head", type=int, default=25, help="transcript lines to print (default 25)")
+    b.add_argument("--cat", action="store_true", help="print the whole transcript")
+    b.add_argument("--desc-chars", type=int, default=800)
+    args = ap.parse_args()
+    try:
+        {"search": cmd_search, "devlog": cmd_devlog, "brief": cmd_brief}[args.cmd](args)
+    except yt_dlp.utils.DownloadError as e:
+        raise SystemExit(f"error: {str(e).replace('ERROR: ', '')}")
+    except KeyboardInterrupt:
+        raise SystemExit(130)
+
+
+if __name__ == "__main__":
+    main()

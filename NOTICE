@@ -1,0 +1,11 @@
+Third-party material in this repository
+
+docs/images/*: screenshots of Lily Pad Leap, a game built with this skill. Its trees, bushes, rocks
+  and flowers are Kenney's Nature Kit (CC0 1.0, https://kenney.nl/assets/nature-kit).
+
+Downloaded at runtime, not included:
+  tools/rbxdocs clones Roblox's creator documentation (https://github.com/Roblox/creator-docs),
+  licensed CC-BY-4.0 by Roblox Corporation, into ~/.cache/roblox-gamesmith on your machine.
+
+Roblox, Roblox Studio and related marks are trademarks of Roblox Corporation. This project is not
+affiliated with or endorsed by Roblox Corporation.

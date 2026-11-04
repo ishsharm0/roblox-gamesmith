@@ -1,0 +1,609 @@
+#!/usr/bin/env -S uv run --script --quiet
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["pillow>=10.1"]
+# ///
+"""rbx-research: read Roblox's public discovery data for game-design research.
+
+Uses only the public, unauthenticated endpoints the roblox.com website itself calls
+(explore-api, search-api, games, thumbnails, badges, game-passes, developer-products).
+Responses are cached in ~/.cache/roblox-gamesmith/research for a few minutes; 429s back off.
+
+Commands:
+  sorts                          list chart/sort ids (top-trending, top-playing-now, trending-in-<genre>, ...)
+  charts [--sort S] [--genre G]  ranked list from a chart; --sort all merges every chart
+  top                            alias of charts
+  search "<keywords>"            find experiences by keyword
+  game <placeId|universeId|url|"name">   full details + icon/screenshots + contact sheet
+  compare A B C ...              side-by-side metrics table (same id forms as `game`)
+
+Files go to ./.rbx-research/<slug>/ (override with --out).
+"""
+
+import argparse
+import json
+import os
+import re
+import statistics
+import sys
+import time
+import urllib.parse
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+from _common import (  # noqa: E402
+    HttpError, _cache_path, clip, contact_sheet, days_since, display_name, download, fmt_age,
+    fmt_num, http_json, slugify, try_json,
+)
+
+SESSION = str(uuid.uuid4())
+EXPLORE = "https://apis.roblox.com/explore-api/v1"
+DEVICES = ["computer", "high_end_phone", "low_end_phone", "high_end_tablet", "low_end_tablet", "console", "vr"]
+
+
+# ---------------------------------------------------------------- data access
+
+def explore_params(args, **extra):
+    p = {"sessionId": SESSION, "device": args.device, "country": args.country}
+    p.update(extra)
+    return urllib.parse.urlencode(p)
+
+
+def all_sorts(args):
+    """Every sort on the Charts page, with their games (get-sorts is paginated, ~6 sorts/page)."""
+    sorts, token = [], None
+    for _ in range(12):
+        extra = {"sortsPageToken": token} if token else {}
+        d = http_json(f"{EXPLORE}/get-sorts?{explore_params(args, **extra)}", ttl=600)
+        sorts += [s for s in d.get("sorts", []) if s.get("contentType") == "Games"]
+        token = d.get("nextSortsPageToken")
+        if not token:
+            break
+    return sorts
+
+
+def sort_content(args, sort_id):
+    return http_json(f"{EXPLORE}/get-sort-content?{explore_params(args, sortId=sort_id)}", ttl=600)
+
+
+def games_info(universe_ids, ttl=1800):
+    """games.roblox.com/v1/games in batches of 50 -> {universeId: info}.
+    Each game is cached individually so overlapping chart/search calls reuse it."""
+    out, missing = {}, []
+    for u in dict.fromkeys(int(x) for x in universe_ids if x):
+        path = _cache_path("game-u", str(u))
+        if os.path.exists(path) and time.time() - os.path.getmtime(path) < ttl:
+            try:
+                with open(path) as f:
+                    out[u] = json.load(f)
+                continue
+            except (OSError, ValueError):
+                pass
+        missing.append(u)
+    batches = [missing[i:i + 50] for i in range(0, len(missing), 50)]
+    if len(batches) > 4:
+        print(f"  fetching details for {len(missing)} games ({len(batches)} requests)...", file=sys.stderr)
+    # Sequential on purpose: this endpoint 429s on parallel bursts.
+    for batch in batches:
+        d = http_json("https://games.roblox.com/v1/games?universeIds=" + ",".join(map(str, batch)), ttl=0)
+        for g in d.get("data", []):
+            out[g["id"]] = g
+            path = _cache_path("game-u", str(g["id"]))
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as f:
+                json.dump(g, f)
+    return out
+
+
+def votes_info(universe_ids):
+    out, ids = {}, [int(u) for u in universe_ids if u]
+    for i in range(0, len(ids), 50):
+        d = try_json("https://games.roblox.com/v1/games/votes?universeIds=" + ",".join(map(str, ids[i:i + 50])), ttl=600) or {}
+        for v in d.get("data", []):
+            out[v["id"]] = v
+    return out
+
+
+def omni_search(query, n):
+    results, token = [], None
+    while len(results) < n:
+        q = {"searchQuery": query, "sessionId": SESSION, "pageType": "all"}
+        if token:
+            q["pageToken"] = token
+        d = http_json("https://apis.roblox.com/search-api/omni-search?" + urllib.parse.urlencode(q), ttl=600)
+        for grp in d.get("searchResults", []):
+            if grp.get("contentGroupType") != "Game":
+                continue
+            results += grp.get("contents", [])
+        token = d.get("nextPageToken")
+        if not token or not d.get("searchResults"):
+            break
+    return results[:n]
+
+
+def place_to_universe(place_id):
+    d = try_json(f"https://apis.roblox.com/universes/v1/places/{place_id}/universe", ttl=86400)
+    return (d or {}).get("universeId")
+
+
+def resolve(target):
+    """Accepts a roblox.com URL, a placeId, a universeId, or a name (top search hit).
+    Returns (universeId, note)."""
+    t = target.strip()
+    m = re.search(r"roblox\.com/(?:[a-z]{2}/)?games/(\d+)", t)
+    if m:
+        u = place_to_universe(m.group(1))
+        if u:
+            return u, f"place {m.group(1)}"
+        raise SystemExit(f"could not resolve place id {m.group(1)} from URL")
+    m = re.search(r"[?&]universeId=(\d+)", t)
+    if m:
+        return int(m.group(1)), "universe"
+    if "roblox.com/share" in t:
+        raise SystemExit("share links need a browser redirect; open it and pass the /games/<placeId> URL instead")
+    if t.isdigit():
+        u = place_to_universe(t)
+        if u:
+            return u, f"place {t}"
+        if games_info([t]):
+            return int(t), "universe"
+        raise SystemExit(f"{t} is neither a known placeId nor universeId")
+    hits = omni_search(t, 1)
+    if not hits:
+        raise SystemExit(f"no experience found for '{t}'")
+    return hits[0]["universeId"], f"top search hit for '{t}'"
+
+
+def paged_passes(u, cap=300):
+    out, token = [], ""
+    while len(out) < cap:
+        q = {"passView": "Full", "pageSize": 100}
+        if token:
+            q["pageToken"] = token
+        d = try_json(f"https://apis.roblox.com/game-passes/v1/universes/{u}/game-passes?" + urllib.parse.urlencode(q), ttl=1800)
+        if not d:
+            break
+        out += d.get("gamePasses", [])
+        token = d.get("nextPageToken")
+        if not token:
+            break
+    return out
+
+
+def paged_products(u, cap=300):
+    out, cursor = [], ""
+    while len(out) < cap:
+        q = {"limit": 50}
+        if cursor:
+            q["cursor"] = cursor
+        d = try_json(f"https://apis.roblox.com/developer-products/v2/universes/{u}/developerproducts?" + urllib.parse.urlencode(q), ttl=1800)
+        if not d:
+            break
+        page = d.get("developerProducts", [])
+        new = [p for p in page if p.get("ProductId") not in {x.get("ProductId") for x in out}]
+        out += new
+        cursor = d.get("nextPageCursor")
+        if not cursor or not new:
+            break
+    return out
+
+
+def paged_badges(u, cap=500):
+    out, cursor = [], ""
+    while len(out) < cap:
+        q = {"limit": 100, "sortOrder": "Asc"}
+        if cursor:
+            q["cursor"] = cursor
+        d = try_json(f"https://badges.roblox.com/v1/universes/{u}/badges?" + urllib.parse.urlencode(q), ttl=1800)
+        if not d:
+            break
+        out += d.get("data", [])
+        cursor = d.get("nextPageCursor")
+        if not cursor:
+            break
+    return out
+
+
+def age_rating(u):
+    d = try_json("https://apis.roblox.com/experience-guidelines-api/experience-guidelines/get-age-recommendation",
+                 method="POST", body={"universeId": str(u)}, ttl=86400)
+    if not d:
+        return None, []
+    det = d.get("ageRecommendationDetails") or {}
+    summ = ((det.get("summary") or {}).get("ageRecommendation") or {})
+    descs = [x.get("descriptor", {}).get("displayName") for x in det.get("descriptorUsages", []) if x.get("contains")]
+    return summ.get("displayNameWithHeaderShort") or summ.get("displayName"), [x for x in descs if x]
+
+
+def creator_info(creator):
+    cid, ctype = creator.get("id"), creator.get("type")
+    info, games = {}, []
+    if ctype == "Group":
+        info = try_json(f"https://groups.roblox.com/v1/groups/{cid}", ttl=86400) or {}
+        d = try_json(f"https://games.roblox.com/v2/groups/{cid}/games?accessFilter=Public&limit=50&sortOrder=Desc", ttl=3600)
+    else:
+        d = try_json(f"https://games.roblox.com/v2/users/{cid}/games?accessFilter=Public&limit=50&sortOrder=Desc", ttl=3600)
+    games = (d or {}).get("data", [])
+    return info, games
+
+
+def collect(u, full=True):
+    """Everything we know about one universe."""
+    g = games_info([u]).get(int(u))
+    if not g:
+        raise SystemExit(f"universe {u} not found")
+    jobs = {
+        "votes": lambda: votes_info([u]).get(int(u), {}),
+        "passes": lambda: paged_passes(u),
+        "products": lambda: paged_products(u),
+        "badges": lambda: paged_badges(u),
+        "age": lambda: age_rating(u),
+    }
+    if full:
+        jobs["creator"] = lambda: creator_info(g.get("creator") or {})
+        jobs["media"] = lambda: (try_json(f"https://games.roblox.com/v2/games/{u}/media", ttl=3600) or {}).get("data", [])
+    with ThreadPoolExecutor(len(jobs)) as ex:
+        futs = {k: ex.submit(f) for k, f in jobs.items()}
+        res = {k: f.result() for k, f in futs.items()}
+    res["game"] = g
+    return res
+
+
+# ---------------------------------------------------------------- derived metrics
+
+def like_pct(up, down):
+    up, down = up or 0, down or 0
+    return (100.0 * up / (up + down)) if up + down else None
+
+
+def metrics(r):
+    g, v = r["game"], r.get("votes") or {}
+    age = days_since(g.get("created"))
+    visits = g.get("visits") or 0
+    passes = [p for p in r.get("passes", []) if p.get("isForSale") and p.get("price")]
+    prods = [p for p in r.get("products", []) if p.get("IsForSale") and p.get("PriceInRobux")]
+    return {
+        "ccu": g.get("playing"),
+        "visits": visits,
+        "favorites": g.get("favoritedCount"),
+        "like": like_pct(v.get("upVotes"), v.get("downVotes")),
+        "votes": (v.get("upVotes") or 0) + (v.get("downVotes") or 0),
+        "age_days": age,
+        "visits_per_day": visits / max(age, 1) if age is not None else None,
+        "updated_days": days_since(g.get("updated")),
+        "fav_per_1k_visits": 1000 * (g.get("favoritedCount") or 0) / visits if visits else None,
+        "pass_prices": sorted(p["price"] for p in passes),
+        "product_prices": sorted(p["PriceInRobux"] for p in prods),
+        "badges": len(r.get("badges", [])),
+    }
+
+
+def price_range(prices):
+    if not prices:
+        return "none"
+    if len(prices) == 1:
+        return f"{prices[0]}R"
+    return f"{prices[0]}-{prices[-1]}R (median {statistics.median(prices):.0f})"
+
+
+def genre_str(g):
+    l1 = g.get("genre_l1") or g.get("genreL1") or ""
+    l2 = g.get("genre_l2") or ""
+    return f"{l1}/{l2}" if l2 and l2 != l1 else (l1 or "?")
+
+
+def norm(s):
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+# ---------------------------------------------------------------- commands
+
+def cmd_sorts(args):
+    for s in all_sorts(args):
+        info = (s.get("topicLayoutData") or {}).get("infoText", "")
+        print(f"{s['sortId']:<38} {len(s.get('games') or []):>3} games  {clip(info, 90)}")
+
+
+def chart_rows(args):
+    if args.sort == "all":
+        rows, where = {}, {}
+        for s in all_sorts(args):
+            for i, g in enumerate(s.get("games") or []):
+                u = g["universeId"]
+                rows.setdefault(u, g)
+                where.setdefault(u, []).append(f"{s['sortId']}#{i + 1}")
+        return list(rows.values()), where, "all charts merged (ordered by players now)"
+    d = sort_content(args, args.sort)
+    info = (d.get("topicLayoutData") or {}).get("infoText", "")
+    return d.get("games") or [], {}, f"{d.get('sortDisplayName', args.sort)}: {clip(info, 160)}"
+
+
+def print_game_rows(rows, enrich, where=None, rank_label=True):
+    for i, g in enumerate(rows, 1):
+        u = g.get("universeId")
+        e = enrich.get(u, {})
+        up, down = g.get("totalUpVotes"), g.get("totalDownVotes")
+        lp = like_pct(up, down)
+        ccu = g.get("playerCount", e.get("playing"))
+        name = display_name(g.get("name") or e.get("name"))
+        parts = [
+            f"{i:>3}. {clip(name, 34):<34}",
+            f"{fmt_num(ccu):>6} now",
+            f"{lp:.0f}%" if lp is not None else "  ?",
+            f"{clip(genre_str(e or g), 28):<28}",
+            f"{fmt_num(e.get('visits')):>6} visits",
+            f"age {fmt_age(days_since(e.get('created'))):>5}",
+            f"upd {fmt_age(days_since(e.get('updated'))):>5}",
+            f"u{u} p{g.get('rootPlaceId') or e.get('rootPlaceId')}",
+        ]
+        if g.get("isSponsored"):
+            parts.append("[sponsored]")
+        if where and where.get(u):
+            parts.append("in: " + ",".join(where[u][:4]))
+        print(" | ".join(parts))
+
+
+def cmd_charts(args):
+    rows, where, header = chart_rows(args)
+    total = len(rows)
+    if not args.include_sponsored:
+        rows = [g for g in rows if not g.get("isSponsored")]
+    if args.sort == "all":
+        rows.sort(key=lambda g: -(g.get("playerCount") or 0))
+    note = f" {total} games"
+    if args.genre:
+        needle = norm(args.genre)
+        by_l1 = [g for g in rows if needle in norm(g.get("genreL1"))]
+        if by_l1:  # top-level genre match: no need to look up every game
+            rows = by_l1
+            enrich = games_info([g["universeId"] for g in rows])
+        else:  # probably a subgenre (tycoon, tower defense...): needs genre_l2 for every row
+            enrich = games_info([g["universeId"] for g in rows])
+            rows = [g for g in rows if needle in norm(genre_str(enrich.get(g["universeId"], g)))]
+        note = f" genre~'{args.genre}': {len(rows)}/{total} match"
+    else:
+        enrich = games_info([g["universeId"] for g in rows[: args.n]])
+    print(f"# {header}")
+    print(f"# device={args.device} country={args.country}{note}")
+    if not rows:
+        print("no matches; try `rbx-research sorts` for trending-in-<genre> charts or a broader --genre")
+        return
+    print_game_rows(rows[: args.n], enrich, where)
+    genres = {}
+    for g in rows:
+        k = genre_str(enrich[g["universeId"]]) if g["universeId"] in enrich and args.genre else (g.get("genreL1") or "?")
+        genres[k] = genres.get(k, 0) + 1
+    print("# genre mix: " + ", ".join(f"{k} {v}" for k, v in sorted(genres.items(), key=lambda x: -x[1])[:10]))
+
+
+def cmd_search(args):
+    hits = omni_search(args.query, args.n)
+    if not hits:
+        print("no results")
+        return
+    enrich = games_info([h["universeId"] for h in hits])
+    print(f"# search '{args.query}': {len(hits)} results (Roblox relevance order)")
+    print_game_rows(hits, enrich)
+
+
+def find_links(text):
+    links = re.findall(r"(?:https?://|www\.)[^\s)>\]]+|discord\.gg/[A-Za-z0-9]+|(?:x|twitter)\.com/[A-Za-z0-9_]+", text or "")
+    seen = []
+    for l in links:
+        l = l.rstrip(".,!")
+        if l not in seen:
+            seen.append(l)
+    return seen
+
+
+def fetch_media(u, slug_dir, max_shots, name):
+    icon = try_json(f"https://thumbnails.roblox.com/v1/games/icons?universeIds={u}&size=512x512&format=Png&isCircular=false", ttl=3600)
+    shots = try_json(f"https://thumbnails.roblox.com/v1/games/multiget/thumbnails?universeIds={u}&countPerUniverse=25"
+                     f"&size=768x432&format=Png&isCircular=false", ttl=3600)
+    items = []
+    jobs = []
+    for d in (icon or {}).get("data", []):
+        if d.get("state") == "Completed" and d.get("imageUrl"):
+            jobs.append((d["imageUrl"], os.path.join(slug_dir, "icon.png"), "icon"))
+    thumbs = []
+    for d in (shots or {}).get("data", []):
+        thumbs += [t for t in d.get("thumbnails", []) if t.get("state") == "Completed" and t.get("imageUrl")]
+    for i, t in enumerate(thumbs[:max_shots], 1):
+        jobs.append((t["imageUrl"], os.path.join(slug_dir, f"shot-{i:02d}.png"), f"screenshot {i}/{min(len(thumbs), max_shots)}"))
+
+    def get(job):
+        url, dest, label = job
+        try:
+            return download(url, dest), label
+        except HttpError:
+            return None, label
+
+    with ThreadPoolExecutor(4) as ex:
+        items = list(ex.map(get, jobs))
+    items = [(p, l) for p, l in items if p]
+    sheet = contact_sheet(items, os.path.join(slug_dir, "sheet.jpg"), title=name,
+                          subtitle=f"universe {u} - icon + store screenshots (reference only, never reuse)")
+    return items, sheet
+
+
+def cmd_game(args):
+    u, how = resolve(args.target)
+    r = collect(u, full=True)
+    g, m = r["game"], metrics(r)
+    name = g.get("name", "")
+    slug_dir = os.path.join(args.out, f"{slugify(display_name(name))}-{u}")
+    os.makedirs(slug_dir, exist_ok=True)
+    out = []
+    p = out.append
+    cr = g.get("creator") or {}
+    p(f"# {name}   (universe {u}, place {g.get('rootPlaceId')}; resolved via {how})")
+    p(f"url: https://www.roblox.com/games/{g.get('rootPlaceId')}")
+    p(f"creator: {cr.get('name')} ({cr.get('type')} {cr.get('id')}{', verified' if cr.get('hasVerifiedBadge') else ''})")
+    p(f"genre: {genre_str(g)}   max players/server: {g.get('maxPlayers')}   avatar: {g.get('universeAvatarType')}")
+    rating, descs = r.get("age") or (None, [])
+    if rating:
+        p(f"maturity: {rating.replace('Maturity: ', '')}" + (f" ({'; '.join(descs)})" if descs else ""))
+    fav_rate = f" ({m['fav_per_1k_visits']:.1f}/1k visits)" if m["fav_per_1k_visits"] is not None else ""
+    p(f"playing now: {fmt_num(m['ccu'])}   visits: {fmt_num(m['visits'])}   favorites: {fmt_num(m['favorites'])}{fav_rate}")
+    lk = f"{m['like']:.1f}%" if m["like"] is not None else "?"
+    v = r.get("votes") or {}
+    p(f"likes: {lk} ({fmt_num(v.get('upVotes'))} up / {fmt_num(v.get('downVotes'))} down)")
+    p(f"created: {(g.get('created') or '')[:10]} ({fmt_age(m['age_days'])} ago)   updated: {(g.get('updated') or '')[:10]}"
+      f" ({fmt_age(m['updated_days'])} ago)   lifetime avg visits/day: {fmt_num(m['visits_per_day'])}")
+    price = g.get("price")
+    p(f"access: {'PAID ' + str(price) + 'R' if price else 'free'}   licensed IP: {bool(g.get('isOfficiallyLicensed'))}"
+      "   (private-server price is not public; check the store page)")
+
+    passes = sorted((x for x in r["passes"] if x.get("isForSale")), key=lambda x: x.get("price") or 0)
+    p(f"\n## game passes: {len(passes)} for sale, {price_range(m['pass_prices'])}")
+    for x in passes[: args.list]:
+        desc = clip((x.get("displayDescription") or x.get("description") or "").replace("\n", " "), 70)
+        p(f"  {x.get('price') or '-':>6}R  {clip(x.get('displayName') or x.get('name'), 40)}" + (f" - {desc}" if desc else ""))
+    if len(passes) > args.list:
+        p(f"  ... {len(passes) - args.list} more (see raw.json)")
+
+    prods = sorted((x for x in r["products"] if x.get("IsForSale")), key=lambda x: x.get("PriceInRobux") or 0)
+    p(f"\n## developer products: {len(prods)} for sale, {price_range(m['product_prices'])}")
+    if prods:
+        line = "; ".join(f"{clip(x.get('displayName') or x.get('Name'), 28)} {x.get('PriceInRobux')}R" for x in prods[: args.list * 2])
+        p("  " + line + (f"; ... {len(prods) - args.list * 2} more" if len(prods) > args.list * 2 else ""))
+
+    badges = [b for b in r["badges"] if b.get("enabled")]
+    p(f"\n## badges: {len(badges)} enabled (awarded total / past day / win-rate as shown on roblox.com) - a progression funnel")
+    for b in badges[: args.list]:
+        st = b.get("statistics") or {}
+        p(f"  {clip(b.get('displayName') or b.get('name'), 40):<40} {fmt_num(st.get('awardedCount')):>7} {fmt_num(st.get('pastDayAwardedCount')):>6}/day"
+          f"  win {100 * (st.get('winRatePercentage') or 0):.2f}%")
+    if len(badges) > args.list:
+        p(f"  ... {len(badges) - args.list} more")
+
+    media = r.get("media") or []
+    videos = sum(1 for x in media if x.get("assetType") == "GamePreviewVideo")
+    p(f"\n## store media: {sum(1 for x in media if x.get('assetType') == 'Image')} images, {videos} preview video(s)")
+
+    desc = (g.get("description") or "").strip()
+    p("\n## description")
+    p(re.sub(r"\n\s*\n+", "\n", clip(desc, args.desc_chars)).strip() or "(empty)")
+    links = find_links(desc)
+    if links:
+        p("links in description: " + "  ".join(links[:8]))
+    p("(official social links need login; only description links are shown)")
+
+    info, cgames = r.get("creator") or ({}, [])
+    if info.get("memberCount") is not None:
+        p(f"\n## creator community: {fmt_num(info['memberCount'])} members")
+    others = sorted((x for x in cgames if x.get("id") != int(u)), key=lambda x: -(x.get("placeVisits") or 0))
+    if others:
+        p(f"## creator's other public games ({len(cgames)} total), by visits:")
+        for x in others[:5]:
+            p(f"  {clip(display_name(x.get('name')), 40):<40} {fmt_num(x.get('placeVisits')):>7} visits  created {(x.get('created') or '')[:10]}  u{x.get('id')}")
+
+    if not args.no_media:
+        items, sheet = fetch_media(u, slug_dir, args.max_shots, display_name(name))
+        p(f"\n## files ({len(items)} images)")
+        p(f"contact sheet: {os.path.abspath(sheet) if sheet else 'none (no images)'}")
+        p(f"images: {os.path.abspath(slug_dir)}/icon.png, shot-NN.png")
+    with open(os.path.join(slug_dir, "raw.json"), "w") as f:
+        json.dump(r, f, indent=1, default=str)
+    text = "\n".join(out)
+    with open(os.path.join(slug_dir, "details.txt"), "w") as f:
+        f.write(text + "\n")
+    print(text)
+    print(f"saved: {os.path.abspath(slug_dir)}/details.txt, raw.json")
+
+
+def cmd_compare(args):
+    resolved = []
+    for t in args.targets:
+        try:
+            resolved.append(resolve(t)[0])
+        except SystemExit as e:
+            print(f"skip {t}: {e}", file=sys.stderr)
+    if not resolved:
+        raise SystemExit("nothing to compare")
+    with ThreadPoolExecutor(4) as ex:
+        data = list(ex.map(lambda u: collect(u, full=False), resolved))
+    cols = []
+    for r in data:
+        g, m = r["game"], metrics(r)
+        pp, dp = m["pass_prices"], m["product_prices"]
+        cols.append({
+            "game": clip(display_name(g.get("name")), 18),
+            "universe": str(g["id"]),
+            "genre": clip(genre_str(g), 26),
+            "playing now": fmt_num(m["ccu"]),
+            "like %": f"{m['like']:.1f}" if m["like"] is not None else "?",
+            "votes": fmt_num(m["votes"]),
+            "visits": fmt_num(m["visits"]),
+            "favorites": fmt_num(m["favorites"]),
+            "fav/1k visits": f"{m['fav_per_1k_visits']:.1f}" if m["fav_per_1k_visits"] is not None else "?",
+            "age": fmt_age(m["age_days"]),
+            "visits/day (avg)": fmt_num(m["visits_per_day"]),
+            "ccu per 1M vis/day": f"{1e6 * (m['ccu'] or 0) / m['visits_per_day']:.0f}" if m["visits_per_day"] else "?",
+            "last update": fmt_age(m["updated_days"]) + " ago",
+            "max players": str(g.get("maxPlayers")),
+            "paid access": f"{g['price']}R" if g.get("price") else "free",
+            "passes": f"{len(pp)}" + (f" ({pp[0]}-{pp[-1]}R)" if pp else ""),
+            "dev products": f"{len(dp)}" + (f" ({dp[0]}-{dp[-1]}R)" if dp else ""),
+            "badges": str(m["badges"]),
+            "creator": clip((g.get("creator") or {}).get("name"), 18),
+        })
+    keys = list(cols[0].keys())
+    kw = max(len(k) for k in keys)
+    widths = [max(len(c[k]) for k in keys) for c in cols]
+    for k in keys:
+        print(f"{k:<{kw}} | " + " | ".join(f"{c[k]:<{w}}" for c, w in zip(cols, widths)))
+    print("# visits/day is a lifetime average (visits / age); old games understate their current rate.")
+    print("# 'ccu per 1M vis/day' is a rough session-length/retention proxy: higher = players stay longer or come back.")
+
+
+# ---------------------------------------------------------------- cli
+
+def main():
+    ap = argparse.ArgumentParser(prog="rbx-research", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    def common(parser, default):
+        d = (lambda v: v) if default else (lambda v: argparse.SUPPRESS)
+        parser.add_argument("--device", default=d("computer"), choices=DEVICES, help="chart device filter (default computer)")
+        parser.add_argument("--country", default=d("all"), help="chart country code, e.g. us, gb, br (default all)")
+        parser.add_argument("--out", default=d(".rbx-research"), help="output dir for game media (default ./.rbx-research)")
+
+    common(ap, True)
+    shared = argparse.ArgumentParser(add_help=False)
+    common(shared, False)  # also accept the options after the subcommand
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    _add = sub.add_parser
+    sub.add_parser = lambda *a, **k: _add(*a, parents=[shared], **k)
+
+    sub.add_parser("sorts", help="list available chart/sort ids")
+    for name in ("charts", "top"):
+        c = sub.add_parser(name, help="ranked games from a chart")
+        c.add_argument("--sort", default="top-playing-now",
+                       help="sort id from `sorts` (top-playing-now, top-trending, up-and-coming, top-earning, top-rated, "
+                            "top-revisited, trending-in-<genre>...) or 'all' to merge every chart")
+        c.add_argument("--genre", help="substring match on genre/subgenre, e.g. obby, tycoon, horror, rpg, simulation")
+        c.add_argument("-n", type=int, default=25, help="rows to print (default 25)")
+        c.add_argument("--include-sponsored", action="store_true", help="keep paid-placement rows")
+    s = sub.add_parser("search", help="keyword search for experiences")
+    s.add_argument("query")
+    s.add_argument("-n", type=int, default=20)
+    gm = sub.add_parser("game", help="full details for one experience; downloads icon + screenshots + contact sheet")
+    gm.add_argument("target", help="placeId, universeId, roblox.com/games/... URL, or a name (uses top search hit)")
+    gm.add_argument("--no-media", action="store_true", help="skip image downloads and contact sheet")
+    gm.add_argument("--max-shots", type=int, default=10, help="screenshots to download (default 10)")
+    gm.add_argument("--list", type=int, default=15, help="max passes/badges listed (default 15)")
+    gm.add_argument("--desc-chars", type=int, default=1500, help="description characters to print (default 1500)")
+    cp = sub.add_parser("compare", help="side-by-side metrics for several games")
+    cp.add_argument("targets", nargs="+", help="same forms as `game`")
+    args = ap.parse_args()
+    try:
+        {"sorts": cmd_sorts, "charts": cmd_charts, "top": cmd_charts, "search": cmd_search,
+         "game": cmd_game, "compare": cmd_compare}[args.cmd](args)
+    except HttpError as e:
+        raise SystemExit(f"error: {e}")
+    except KeyboardInterrupt:
+        raise SystemExit(130)
+
+
+if __name__ == "__main__":
+    main()

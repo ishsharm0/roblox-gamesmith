@@ -1,0 +1,12 @@
+# Walk every screen the way a player reaches it, then read the sheet. Run:
+#   rbxgame tour scenarios/ui-tour.txt                  (desktop)
+#   rbxgame tour scenarios/ui-tour.txt --device "iPhone 1"   (phone, landscape)
+# Steps: play | stop | wait <s> | shot <name> | click <path under PlayerGui> | client <Luau> | server <Luau>
+# Studio's simulated clicks can miss on a simulated phone; give the HUD a test-hook attribute (e.g. "Modal")
+# and force screens from the server so the phone tour still reaches every screen.
+play
+wait 8
+shot title
+# click HUD.Root.Title.Play
+# wait 2
+# shot first-action
