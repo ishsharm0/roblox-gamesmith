@@ -204,6 +204,16 @@ def sheet(paths, out, cols=3):
     S.save(out, quality=88)
 
 
+def same_picture(paths):
+    """True when every capture is the same view: tiny greyscale thumbnails differ by under 3% on average."""
+    try:
+        from PIL import Image, ImageChops, ImageStat
+        thumbs = [Image.open(x).convert("L").resize((48, 27)) for x in paths]
+        return all(ImageStat.Stat(ImageChops.difference(thumbs[0], t)).mean[0] < 8 for t in thumbs[1:])
+    except Exception:
+        return False
+
+
 def cmd_shots(a):
     p = project()
     play = "--play" in a
@@ -230,7 +240,7 @@ def cmd_shots(a):
             studio("stop", check=False)
     sheet(paths, "shots/sheet.jpg")
     print(f"{len(paths)} shots -> {os.path.abspath('shots/sheet.jpg')}")
-    if play and len(paths) > 1 and len({os.path.getsize(x) // 2048 for x in paths}) == 1:
+    if play and len(paths) > 1 and same_picture(paths):
         print("warning: every play shot is the same picture. The game owns the camera (a title screen or a scripted rig),\n"
               "so fixed cameras can't see gameplay. Use a play tour: rbxgame tour scenarios/play-tour.txt")
 
