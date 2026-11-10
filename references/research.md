@@ -3,6 +3,8 @@
 Five rules:
 1. Research the genre's top five, not the whole site. The floor (what every top game has) and the one
    thing the best does that the rest don't are the two findings that matter.
+   Add one smaller distinctive game and one adjacent mechanic (another genre, a board game, a sport):
+   that is where a twist the top five don't have comes from.
 2. Players-now (CCU) and like ratio say more than visits. Visits are lifetime; a 4-year-old game with
    2B visits and 300 players is a fossil. A 15-day-old game at 30k CCU is the current wave.
 3. Look at the first minute, not the tenth: frames and transcript from the opening of a gameplay video
@@ -28,6 +30,8 @@ devforum read <url>
 ```
 
 ## Reading the numbers
+
+These are heuristics for a snapshot, not proof of what causes retention; check them against gameplay.
 
 - **Momentum**: CCU against age. Under 60 days and over 10k CCU is a breakout; check what it shares with
   the other breakouts on the trending chart (the format of the moment: "+1 X every second", "don't

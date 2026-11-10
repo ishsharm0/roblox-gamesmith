@@ -26,6 +26,13 @@ class StudioSelectionTests(unittest.TestCase):
             driver.cmd_open([])
             kill.assert_not_called()
             push.assert_called_once()
+    def test_updated_launcher_window_is_found_through_mcp(self):
+        driver = load('rbxgame')
+        results = [subprocess.CompletedProcess([], 1, '', ''),
+                   subprocess.CompletedProcess([], 0, '{"studios":[{"id":"safe-window","name":"QualityValidation.rbxlx"}]}', '')]
+        with patch.object(driver.subprocess, 'run', side_effect=results):
+            self.assertEqual(driver.studio_window_open('/tmp/QualityValidation.rbxlx'), ['safe-window'])
+
     def test_explicit_unknown_window_never_falls_back(self):
         studio = load('studio')
         with patch.object(studio, 'studios', return_value='{"studios":[{"id":"other","name":"Other Game"}]}'):

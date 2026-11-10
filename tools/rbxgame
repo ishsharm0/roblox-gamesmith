@@ -68,7 +68,23 @@ def studio(*args, check=True):
 
 def studio_window_open(place):
     r = subprocess.run(["pgrep", "-f", f"localPlaceFile {place}"], capture_output=True, text=True)
-    return [int(x) for x in r.stdout.split()]
+    pids = [int(x) for x in r.stdout.split()]
+    if pids:
+        return pids
+    # Updated launchers can consume/change their launch arguments. Ask MCP before
+    # concluding the window is closed; otherwise open/save can duplicate a window
+    # or silently skip exporting the existing project's world.
+    listed = subprocess.run([sys.executable, STUDIO, "list"], capture_output=True, text=True, timeout=30)
+    if listed.returncode:
+        raise SystemExit("Cannot safely determine open Studio windows; no new window was launched.")
+    try:
+        entries = json.loads(listed.stdout).get("studios", [])
+    except (ValueError, AttributeError):
+        raise SystemExit("Invalid Studio window listing; no new window was launched.")
+    matches = [entry["id"] for entry in entries if entry.get("name") in (os.path.basename(place), os.path.splitext(os.path.basename(place))[0])]
+    if len(matches) > 1:
+        raise SystemExit("Multiple Studio windows have this project name; select the intended window explicitly.")
+    return matches
 
 
 def cmd_new(a):
@@ -333,7 +349,7 @@ def cmd_doctor(a):
 
 def main():
     a = sys.argv[1:]
-    if not a or a[0] in ("-h", "--help"):
+    if not a or a[0] in ("-h", "--help") or (len(a) > 1 and a[1] in ("-h", "--help")):
         print(__doc__); return
     cmds = {"new": cmd_new, "build": cmd_build, "open": cmd_open, "push": cmd_push, "save": cmd_save,
             "check": cmd_check, "shots": cmd_shots, "test": cmd_test, "tour": cmd_tour, "doctor": cmd_doctor}

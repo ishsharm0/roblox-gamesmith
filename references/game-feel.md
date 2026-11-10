@@ -295,7 +295,9 @@ With `Workspace.AuthorityMode = Server` (Server Authority, full release July 202
 
 ---
 
-## Juice checklist per action
+## Feedback checklist per action
+
+Select the layers warranted by the action and genre. The entries below are review options, not a requirement to play every sound, particle and camera response on every input. Silence and subtle feedback can provide useful contrast.
 
 - [ ] Local visual response in the same frame
 - [ ] Sound with pitch/volume variation

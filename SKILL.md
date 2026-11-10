@@ -23,7 +23,7 @@ made on purpose, it is fun within 30 seconds, it is a skill to get better at, an
 
 1. `rbxgame doctor`. Fix anything marked MISS before building. If Studio isn't connected, ask the
    person to open Studio and turn on "Enable Studio as MCP server".
-2. New game: read `workflows/make-a-game.md` before the first file. It sets the order and the bar.
+2. New game: read `references/creative-quality.md` and `workflows/make-a-game.md` before the first file. It sets the order and the bar.
 3. Existing game or a single task: find it in **Routing** below and read that file first.
 4. Unsure how something is done: `references/reference-game.md` shows the patterns a tested game used.
 
@@ -68,8 +68,7 @@ and why); the docs give the facts. When they disagree on a fact, the docs win: f
 - **Files are the source.** Code changes go in `src/` and reach Studio with `rbxgame push`. World edits
   made in Studio are exported with `rbxgame save` before anything closes.
 - **A game is a skill to get better at.** Before art, the core verb needs a judgement in it (timing,
-  distance, aim, route, risk). The course is designed beat by beat with a difficulty curve, and there
-  are stakes and a score. A precise bot must finish it, and a bot with a person's errors must show a
+  distance, aim, route, risk). Design the session beat by beat with an appropriate challenge/recovery curve; scoring, lives and stars are choices for the genre, not universal requirements. A precise bot must finish it, and a bot with a person's errors must show a
   gentle curve (`references/mechanics-and-fun.md`). A first version without this was rejected as "an
   obby for babies".
 - **Look before you claim.** Capture the game (`rbxgame shots`, `studio shot`, `rbxgame tour`) and look at
@@ -109,6 +108,8 @@ and why); the docs give the facts. When they disagree on a fact, the docs win: f
 | Character animation without assets (crouch, jump, flip, land) | `references/procedural-animation.md` + `templates/project/src/client/Poser.luau` |
 | UI and UX: screens, HUD, menus, flow | `references/ui-ux-style.md` (design), then `references/ui-engineering.md` (build); use `UiKit.luau` |
 | Audio | `references/audio.md` |
+| Procedural geometry, model quality, proportions and construction | `references/geometry-quality.md` |
+| Original concepts, audience appeal, pacing and creative review | `references/creative-quality.md` |
 | Models, meshes, textures, Creator Store, Blender | `references/assets-pipeline.md`, `references/blender-pipeline.md`, `references/open-cloud.md` |
 | Saving player data | `references/data.md` |
 | Shops, passes, products, receipts | `references/monetization.md`, `references/receipts.md` |

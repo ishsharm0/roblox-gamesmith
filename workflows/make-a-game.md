@@ -1,5 +1,7 @@
 # Make a game, end to end
 
+Read `references/creative-quality.md` for concept selection, audience value and pacing, and `references/geometry-quality.md` before hero/world asset construction. These guides qualify the illustrative timings/styles below; do not force obby progression or one UI treatment into every genre.
+
 The order matters: fun before pretty, pretty before features, and a capture before every claim. Each
 stage ends with something you looked at, not something you wrote.
 
@@ -67,7 +69,7 @@ and prints the console. Fix until a scenario walks the whole first session with 
 
 Before any art pass, make the game worth playing. Write the core verb in CONCEPT.md (input → what the
 player judges → outcome → failure → mastery), lay the course out as a beats table per stage
-(introduce, test, twist, breathe), add stakes (lives, combo) and a score with stars, and animate the
+(introduce, test, twist, breathe), choose genre-appropriate stakes and feedback (lives, combo or stars only if they support this loop), and animate the
 verb (`references/procedural-animation.md`, `src/client/Poser.luau`). Then add a client test hook
 that drives the real controls and a bot scenario that plays the whole game; run it several times. It
 must finish every time. Then run a second bot that misses like a person (judgement, timing and
@@ -88,22 +90,19 @@ from the research folder side by side.
 
 ## 6. Feel pass: `references/game-feel.md`
 
-Every action gets a response: tween, particle, sound, camera nudge, number popup, currency flying to the
-counter. Check the timings in play (they are the difference between a game that feels cheap and one
+Every meaningful action gets clear feedback. Select appropriate layers—animation, sound, particles, camera or UI—rather than applying every layer to every action. Check the timings in play (they are the difference between a game that feels cheap and one
 that feels good).
 
 ## 7. UI and audio: `references/ui-ux-style.md`, `references/audio.md`
 
-Build every screen from `src/client/UiKit.luau` (it comes with the project): one theme, chunky
-buttons with a lip, drawn icons, pills, switches, banners, pop and punch motion, scaled from one
-1100x620 reference. List the screens from SESSION.md (title, first action, coach, reward, countdown,
+Build every screen from `src/client/UiKit.luau` (it comes with the project): one coherent theme suited to the game, readable controls and restrained motion; the kit's chunky buttons are an option, not a required art direction. List the screens from SESSION.md (title, first action, coach, reward, countdown,
 HUD, stage change, failure, results, menu, settings) and build each from the recipes in
 `references/ui-ux-style.md`: one focal point and one next action per screen, HUD in the corners, nothing
 under the thumbs, every change animated. Then write `scenarios/ui-tour.txt` and run `rbxgame tour` on
 desktop and with `--device "iPhone 1"`; judge the two sheets with the rubric in the same reference and
 fix before moving on. The first UI of the test game was a website-style panel with text-pill buttons
 and was rejected twice; the tour is how you see that before the person does.
-Audio: music per zone, an effect on every interaction (button presses included), levels mixed.
+Audio: music per zone, appropriate feedback for meaningful interactions, with levels mixed and quiet/low-stimulation moments preserved.
 
 ## 8. Systems: data, economy, monetization, retention
 
@@ -126,9 +125,7 @@ a game finished because a bot can visit all its platforms.
 A round is: `rbxgame check`, every scenario, `rbxgame shots` and `rbxgame shots --play`, then a written
 review in `NOTES.md` against the bar in CONCEPT.md, as a first-time player would see it: P0 (broken,
 ugly, confusing, or unfair), P1 (weak), P2 (polish), and the ONE change that would most raise the game.
-Fix every P0 and the ONE change in a single pass, then run the next round. Two or three rounds is the
-norm. If the game is still below the bar after three, the concept or the core loop is the problem:
-go back to step 2, not to more polish.
+Fix every P0 and the ONE change in a single pass, then run the next round. Repeat when substantive defects or new changes justify it. Diagnose whether the remaining weakness is the concept, mechanics, geometry, composition or implementation; do not declare the concept wrong solely because a fixed number of review rounds elapsed.
 
 ## 10. Publish: `workflows/publish.md`
 
