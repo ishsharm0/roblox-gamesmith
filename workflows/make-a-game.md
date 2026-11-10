@@ -81,13 +81,26 @@ path only failure reaches (respawn, retry). Then play it with real input and cap
 12-year-old ask for another go after the results screen?" If not, the verb or the curve is wrong,
 and no amount of UI will fix it.
 
+## 4c. The play sheet
+
+Fill in `scenarios/play-tour.txt` (it starts a session, runs your bot and captures a frame every few
+seconds) and run `rbxgame tour scenarios/play-tour.txt`. This sheet is the game as the player sees it:
+the real camera, the HUD, the feedback, each zone in order. From here on it is the main evidence for
+every look, feel and UI claim; rerun it after every pass. On it, check:
+- the next thing to do is the most visible thing in each frame (if you have to hunt for the target, add
+  a beacon, a glow or contrast until you don't);
+- the frames from different zones could not be mistaken for each other;
+- nothing sits over the play space for more than a moment (banners, toasts, panels);
+- water, sky and ground are not blown out to white or one flat colour.
+
 ## 5. Art pass: `references/art-direction.md`
 
 Pick the style and a lighting preset from the reference, set Lighting in `default.project.json`
 (Technology can only be set there), then dress the greybox: materials and colours from one palette,
 terrain or ground with variation, landmarks visible from spawn, props that say what the place is.
 `rbxgame shots` (from `shots.json`: overview, spawn, eye level, and one per area) and look at the sheet.
-Then `rbxgame shots --play` for the player's own camera. Judge it against the genre's best screenshots
+Then the play sheet again for the player's own camera. Give every zone its own look with
+`src/client/Mood.luau` (time of day, air, water, grade), so reaching a new zone is a reward you can see. Judge it against the genre's best screenshots
 from the research folder side by side.
 
 ## 6. Feel pass: `references/game-feel.md`
@@ -126,7 +139,7 @@ a game finished because a bot can visit all its platforms.
 
 ## 9. Review rounds
 
-A round is: `rbxgame check`, every scenario, `rbxgame shots` and `rbxgame shots --play`, then a written
+A round is: `rbxgame check`, every scenario, `rbxgame shots` and the play sheet, then a written
 review in `NOTES.md` against the bar in CONCEPT.md, as a first-time player would see it: P0 (broken,
 ugly, confusing, or unfair), P1 (weak), P2 (polish), and the ONE change that would most raise the game.
 Fix every P0 and the ONE change in a single pass, then run the next round. Run at least three rounds and keep going while a round still finds a P0. If the same weakness survives two rounds, name its layer (concept, mechanic, geometry, composition or code) and fix it there; polishing around a dull verb is the usual mistake.

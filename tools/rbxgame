@@ -230,6 +230,9 @@ def cmd_shots(a):
             studio("stop", check=False)
     sheet(paths, "shots/sheet.jpg")
     print(f"{len(paths)} shots -> {os.path.abspath('shots/sheet.jpg')}")
+    if play and len(paths) > 1 and len({os.path.getsize(x) // 2048 for x in paths}) == 1:
+        print("warning: every play shot is the same picture. The game owns the camera (a title screen or a scripted rig),\n"
+              "so fixed cameras can't see gameplay. Use a play tour: rbxgame tour scenarios/play-tour.txt")
 
 
 def cmd_test(a):

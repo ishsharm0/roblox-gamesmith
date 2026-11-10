@@ -268,6 +268,10 @@ Example palettes (hex):
 ---
 
 ## Beauty pass checklist
+- Every zone has its own look (`src/client/Mood.luau`: time of day, air, water, grade). Two zones that
+  differ only by a banner colour are one zone. Check it on the play sheet.
+- The next target is the most visible thing on screen: a beacon, a glow or value contrast against its
+  background, in every zone's lighting.
 
 Run with `screen_capture` from the standard shot list (`studio-mcp.md` section 7).
 

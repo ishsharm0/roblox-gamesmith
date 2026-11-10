@@ -53,6 +53,7 @@ and why); the docs give the facts. When they disagree on a fact, the docs win: f
 | Scaffold, build, open hidden, hot-reload, save the world, lint and test | `rbxgame new/build/open/push/save/check` |
 | Playtest a scenario on the server; camera contact sheets | `rbxgame test <file>`, `rbxgame shots` |
 | Click through every UI screen, desktop and phone, onto one sheet | `rbxgame tour scenarios/ui-tour.txt [--device "iPhone 1"]` |
+| See the game as the player does: a bot plays, a frame every few seconds | `rbxgame tour scenarios/play-tour.txt` |
 | Anything in Studio: run Luau in Edit/Server/Client, capture, play/stop, console, export/import | `studio luau/shot/play/stop/console/export/import/call` |
 | Official Roblox docs and API reference | `rbxdocs api/find/search/read` |
 | What's trending on Roblox, a game's stats and passes | `rbx-research` |
@@ -73,7 +74,8 @@ and why); the docs give the facts. When they disagree on a fact, the docs win: f
   answer, and write that answer down. A precise bot must finish it, and a bot with a person's errors must show a
   gentle curve (`references/mechanics-and-fun.md`). A first version without this was rejected as "an
   obby for babies".
-- **Look before you claim.** Capture the game (`rbxgame shots`, `studio shot`, `rbxgame tour`) and look at
+- **Look before you claim.** Capture the game (the play sheet from `scenarios/play-tour.txt` first, then
+  `rbxgame shots`, `studio shot`, the UI tour) and look at
   the images before saying how it looks. Run the scenario before saying it works. A claim without a
   capture or a passing run behind it is a guess; say which parts are untested.
 - **Probe before you blame.** When a test fails in a surprising place, reproduce that one action with

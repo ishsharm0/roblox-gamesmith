@@ -4,6 +4,11 @@ Look up the symptom. Each row is something that actually goes wrong in Roblox pr
 marked **(verified)** were hit and fixed while building Lily Pad Leap (`reference-game.md`).
 
 ## Gameplay and physics
+- **Reflective terrain water goes white.** With a low gameplay camera, `WaterReflectance` above about 0.05
+  mirrors the sky and the pond becomes a pale sheet that hides everything floating on it. Keep it near 0.03
+  and get the colour from `WaterColor`.
+- **ClockTime past about 18 is night**, not dusk, and a Sky with fixed textures ignores the time of day. For
+  sunset and dusk stay at 17.3-17.7 and do the colour with ColorCorrection tint and Atmosphere.
 
 | Symptom | Cause | Fix |
 |---|---|---|
@@ -47,6 +52,10 @@ marked **(verified)** were hit and fixed while building Lily Pad Leap (`referenc
 | DataStore errors in Studio | API access off or place unpublished | enable Studio API access, or use the mock |
 
 ## UI
+- **One shared "latest toast" ticket hides nothing.** A stage banner and a PERFECT popup shared one
+  counter for "am I still the newest message"; the popup bumped it, so the banner's hide never ran and it
+  covered the course for a whole stage. Give each message slot its own ticket. The play sheet catches this;
+  a UI tour does not, because it shows one message at a time.
 
 | Symptom | Cause | Fix |
 |---|---|---|

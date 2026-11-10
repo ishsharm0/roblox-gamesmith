@@ -54,6 +54,9 @@ studio luau scenarios/leap-bot.luau --ctx Client  # during a play session you st
 - **UI tour**: `rbxgame tour scenarios/ui-tour.txt [--device "iPhone 1"]` clicks through every screen
   with real input and captures each onto one contact sheet. Review it against the rubric in
   `ui-ux-style.md`.
+- **Play sheet**: `rbxgame tour scenarios/play-tour.txt` runs a bot through a session and captures a frame every
+  few seconds: the only capture that shows the real camera, HUD and feedback together. A game that owns its
+  camera returns identical frames from `rbxgame shots --play`; use this instead.
 - **Camera sheet**: `rbxgame shots` captures the cameras in `shots.json` for an art review.
 
 ## What to test for every game
