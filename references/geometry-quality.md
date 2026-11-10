@@ -1,30 +1,43 @@
-# Procedural models with designed form
+# Models that look designed
 
-Use the game's art direction and actual player camera. Procedural modeling should produce recognizable, intentionally constructed forms, not an assortment of Parts with labels. Read assets-pipeline and performance for import/runtime constraints; verify unfamiliar APIs with rbxdocs. No new API is required by this guide.
+Generated builds fail the same way: sharp grey boxes, parts floating near each other, one flat colour,
+a label doing the job the shape should. A model passes when a stranger can name it from its silhouette
+at the player's camera, on a phone, with no label.
 
-## Asset brief and pass order
+## Order of work
 
-For each hero or repeated asset, record function, style references, scale against the avatar, silhouette landmarks, proportion ratios, material regions, attachment points, moving pivots and collision behavior. Specify what must read from player height and on a phone. Group dimensions in one config and derive repeated offsets.
+1. **Brief, three lines.** What it is for, how big it is next to a 5-stud avatar, and the two or three
+   features that make it recognisable (a stall is a striped canopy over a counter; a lamp post is a
+   tall thin pole with a hanging lantern).
+2. **Primary masses first.** Three to six big shapes at deliberate ratios (a tree: trunk one third,
+   crown two thirds, crown twice as wide as it is tall is a different tree). Look at the front, side
+   and three-quarter silhouette before adding anything. If it doesn't read now, detail won't fix it.
+3. **Seat parts into each other.** Every part overlaps or touches its neighbour by 0.1-0.3 studs.
+   Posts go into the ground and into the roof. Nothing floats, nothing z-fights (offset coplanar faces
+   by 0.02).
+4. **Soften.** Rounded slabs, tapered posts and blobs from the Build kit below; raw `Block` parts only
+   for things that are truly boxes. Chunky reads better than thin: nothing thinner than 0.4 studs.
+5. **Secondary, then tertiary.** Thickness, braces, trims, an awning edge; then a few readable props.
+   Stop at three levels. Small high-frequency detail shimmers on phones.
+6. **Three or four colours per asset** from the game's palette: one dominant, one secondary, one
+   accent, with materials chosen per region (wood, fabric, metal), not per part.
+7. **Families, not random.** Repeated assets vary in a few set ways (three crown shapes, two heights,
+   a seeded lean), never by uniformly randomising every dimension.
+8. **Moving parts.** Set the pivot and check the whole range of motion for clipping, not only the
+   rest pose.
+9. **Collision is separate.** Decoration has CanCollide, CanQuery and CanTouch off; one simple
+   invisible collider per walkable thing. Everything static is Anchored, including SpawnLocations and
+   hidden supports: check every BasePart, not only the ones your factory made.
 
-1. Block out the primary masses and negative spaces; inspect front/side/three-quarter silhouettes at the intended camera. Correct proportions before surface detail. A thick cylinder with random cubes is not automatically a believable engine, tree or building.
-2. Choose construction that suits the form. Parts/wedges are useful for deliberately stylized assemblies; use terrain for landscape volume and a vetted mesh when the silhouette genuinely needs continuous surfaces. Build supports, joints, openings and thickness visibly where the player can see them. Do not replace a visible opening with black paint if the camera exposes the cheat.
-3. Use consistent edge treatment and intentional material boundaries. Avoid stretched textures, random reflectance, z-fighting, tiny high-frequency trim and floating contacts. Design repeated assets as a family, varying proportions/pose/details within constraints instead of uniformly randomizing every dimension.
-4. Establish pivots and contact clearances before animation. Check the full motion range, not just rest pose. Moving doors need actual clearance; feet should ground, handles should attach, and collision should match the player's expectations.
-5. Separate render detail from simple collision geometry. Decorative parts should not create invisible snags or unnecessary physics/query work. Choose Anchored, collision/query/touch settings and ownership deliberately according to existing architecture; don't disable interaction needed by gameplay.
+A flat roof floating over four poles with crates scattered around fails steps 2, 3 and 7.
 
-## Concrete construction exercise
+## Accept it from captures
 
-For a stylized market stall: primary silhouette is roof canopy over a counter, supported by posts with believable roof attachment; secondary forms are fabric edge, counter thickness, shelves and braces; tertiary forms are a few readable goods/sign details. Keep a clear walkable opening and player-height view of the interaction. Test rain/shadow/lighting shape and camera clearance. A flat roof floating above four poles with randomly scattered crates fails the construction brief. This recipe can be built with Parts without claiming a new model was visually validated.
-
-## Visual and runtime acceptance
-
-Capture neutral-material front/side/three-quarter views, silhouette, final lighting/player-height view, phone view and articulation extremes. A model should read without its label. Fix missing volume, bad proportions and broken joins before bloom or particles. The visual sheet is evidence; a script compiling or number of Parts is not aesthetic validation.
-
-Measure part/mesh/material/texture budgets in the real scene, with repeated instances, streaming and target-device performance. No universal triangle count guarantees quality or speed. Preserve silhouettes when reducing detail; use simpler distant variants when appropriate. Do not hide a performance problem by replacing the hero with a vague primitive. Use pooling/reuse and existing asset tooling where it genuinely helps.
-
-Before acceptance: verify no unintended clipping, collision snags, unanchored decoration or unexpected scripts from imported assets; inspect normal and reduced-motion presentation; check real interaction from touch and desktop cameras. Preserve source geometry/config, asset license and regeneration instructions. Never upload, spend or publish to demonstrate a documentation change. Blender and generated asset tools remain subject to the local skill's authorization rules.
-
-Runtime audit must include every BasePart class, including SpawnLocation and hidden collision/support parts—not just objects made through the prop factory. Explicitly choose anchored versus simulated behavior for each; never assume an instance default matches the intended static construction.
+`studio shot` the asset from the front, the three-quarter and the player's height in the game's
+lighting, plus the phone view. Fix volume, proportion and joins before bloom or particles. Then check
+it in the real scene: part count with all its instances, streaming, and frame time on the device
+simulator. Keep the builder code and any asset licence with the project. Uploading, spending and
+publishing are never part of proving a model.
 
 ## The Build kit (in every new project: `src/shared/Build.luau`)
 

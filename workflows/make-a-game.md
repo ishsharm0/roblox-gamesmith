@@ -1,6 +1,8 @@
 # Make a game, end to end
 
-Read `references/creative-quality.md` for concept selection, audience value and pacing, and `references/geometry-quality.md` before hero/world asset construction. These guides qualify the illustrative timings/styles below; do not force obby progression or one UI treatment into every genre.
+Read `references/creative-quality.md` before choosing the concept and `references/geometry-quality.md`
+before building any hero or world asset. The numbers below are the defaults; change one only for a
+reason the genre gives you, and write the reason in CONCEPT.md.
 
 The order matters: fun before pretty, pretty before features, and a capture before every claim. Each
 stage ends with something you looked at, not something you wrote.
@@ -69,7 +71,7 @@ and prints the console. Fix until a scenario walks the whole first session with 
 
 Before any art pass, make the game worth playing. Write the core verb in CONCEPT.md (input → what the
 player judges → outcome → failure → mastery), lay the course out as a beats table per stage
-(introduce, test, twist, breathe), choose genre-appropriate stakes and feedback (lives, combo or stars only if they support this loop), and animate the
+(introduce, test, twist, breathe), give it stakes and a score (lives or a timer, a combo or streak, stars or a rank; pick the ones this loop makes tense), and animate the
 verb (`references/procedural-animation.md`, `src/client/Poser.luau`). Then add a client test hook
 that drives the real controls and a bot scenario that plays the whole game; run it several times. It
 must finish every time. Then run a second bot that misses like a person (judgement, timing and
@@ -90,25 +92,27 @@ from the research folder side by side.
 
 ## 6. Feel pass: `references/game-feel.md`
 
-Every meaningful action gets clear feedback. Select appropriate layers—animation, sound, particles, camera or UI—rather than applying every layer to every action. Check the timings in play (they are the difference between a game that feels cheap and one
+Every action the player takes is answered within 100 ms by at least motion and sound. The core verb
+gets all the layers (anticipation, the move, impact particles, a camera kick, a sound, a number);
+routine actions get two; the rare payoff gets the biggest version. Check the timings in play (they are the difference between a game that feels cheap and one
 that feels good).
 
 ## 7. UI and audio: `references/ui-ux-style.md`, `references/audio.md`
 
-Build every screen from `src/client/UiKit.luau` (it comes with the project): one coherent theme suited to the game, readable controls and restrained motion; the kit's chunky buttons are an option, not a required art direction. List the screens from SESSION.md (title, first action, coach, reward, countdown,
+Build every screen from `src/client/UiKit.luau` (it comes with the project): one theme set in its tokens (palette, corner radius, font) to match the world. Keep the kit's lip buttons, drawn icons and pop motion unless the game's art direction replaces them with something as tactile; flat web-style panels were rejected twice. List the screens from SESSION.md (title, first action, coach, reward, countdown,
 HUD, stage change, failure, results, menu, settings) and build each from the recipes in
 `references/ui-ux-style.md`: one focal point and one next action per screen, HUD in the corners, nothing
 under the thumbs, every change animated. Then write `scenarios/ui-tour.txt` and run `rbxgame tour` on
 desktop and with `--device "iPhone 1"`; judge the two sheets with the rubric in the same reference and
 fix before moving on. The first UI of the test game was a website-style panel with text-pill buttons
 and was rejected twice; the tour is how you see that before the person does.
-Audio: music per zone, appropriate feedback for meaningful interactions, with levels mixed and quiet/low-stimulation moments preserved.
+Audio: music per zone, a sound on every action and every UI press, the payoff sound the loudest thing in the mix, and silence before a big moment.
 
 ## 8. Systems: data, economy, monetization, retention
 
 `references/data.md`, `references/monetization.md`,
 `references/retention-liveops.md`; instrument the funnel with the analytics skill. Run
-`workflows/audits.md` and `workflows/audits.md` before calling a build finished.
+`workflows/audits.md` before calling a build finished.
 
 ## 8a. Full journey and art review — independent of mechanical correctness
 
@@ -125,7 +129,7 @@ a game finished because a bot can visit all its platforms.
 A round is: `rbxgame check`, every scenario, `rbxgame shots` and `rbxgame shots --play`, then a written
 review in `NOTES.md` against the bar in CONCEPT.md, as a first-time player would see it: P0 (broken,
 ugly, confusing, or unfair), P1 (weak), P2 (polish), and the ONE change that would most raise the game.
-Fix every P0 and the ONE change in a single pass, then run the next round. Repeat when substantive defects or new changes justify it. Diagnose whether the remaining weakness is the concept, mechanics, geometry, composition or implementation; do not declare the concept wrong solely because a fixed number of review rounds elapsed.
+Fix every P0 and the ONE change in a single pass, then run the next round. Run at least three rounds and keep going while a round still finds a P0. If the same weakness survives two rounds, name its layer (concept, mechanic, geometry, composition or code) and fix it there; polishing around a dull verb is the usual mistake.
 
 ## 10. Publish: `workflows/publish.md`
 

@@ -26,26 +26,50 @@ first 30 seconds are walking or reading; the core action is "touch part, get num
 generic grass, blocks and a spawn pad; nothing on screen changes as the player gets better.
 
 
-Use alongside game-design, mechanics-and-fun and player-journey. Start with a player fantasy and a repeatable decision, not a trending title or a list of currencies. For new concepts, compare three materially different loops. State what the player does, judges, learns and changes in the world. A twist must change decisions or social dynamics, not just theme an existing obby.
-
 ## Research for insight
 
-Sample successful genre games, a smaller distinctive example, and an adjacent genre or real-world activity. Search problems/fantasies, not only charts. Inspect first-time gameplay and later-session depth. Distinguish observation from hypothesis. Popularity, likes, update frequency and shop prices do not establish design quality or cause retention; don't use universal numeric thresholds as proof. Verify current facts using source evidence. Take principles, never another creator's art, names, levels or code.
+Use it with game-design, mechanics-and-fun and player-journey. Compare three different loops before
+committing, and for each write what the player does, judges, learns and changes in the world. A twist
+changes decisions or how players affect each other; a new theme on an old obby is not a twist.
 
-Write a concept test: what should be enjoyable in one minute, what decision varies on repeat, what a new player might misunderstand, and what observation would make you revise the concept. A polished environment does not rescue a dull verb. A novelty claim needs comparison; unfamiliarity to the agent is not originality.
+Sample the genre's top games, one small odd one, and one adjacent genre or real activity. Play or
+watch the first minute and a late session of each. Charts tell you what gets clicked, not why it
+keeps players, so write what you saw separately from what you guess. Take principles, never another
+creator's art, names, levels or code.
 
-## Pacing by genre and session
+Write the concept test in CONCEPT.md: what is fun in the first minute, which decision changes on a
+repeat, what a new player will misunderstand, and what result would make you change the concept.
 
-Map arrival → understandable goal → first meaningful action → feedback → choice → earned payoff → recovery → next possibility. Test a clean first-time session and a returning-player session. Minimize avoidable waiting, but preserve exploration, suspense, downtime and anticipation where they create value. Not every game needs lives, stars, a countdown, a results screen or permanent progression.
+## Pacing
 
-Alternate introduce/test/twist/rest beats when appropriate. Escalate one variable at a time, make stakes understandable, and let recovery teach rather than punish. Failures should be diagnosable; unexpected failure spikes may indicate camera, collision or respawn bugs. Provide stopping points. Avoid deceptive timers, coercive streaks and pay-to-escape frustration.
+Map the session: arrival → a goal you can see → the first action → feedback → a choice → an earned
+payoff → recovery → the next thing. The defaults:
 
-Use bot scenarios for mechanical regressions and controlled difficulty samples; bots cannot establish human enjoyment. Run real controls with desktop/touch layouts, observe hesitation, route choice, time to first meaningful action, retry behavior and repeated-action fatigue. Report observed results and untested assumptions rather than predicting retention.
+- The first action within 10 seconds of spawning and the first payoff within 30.
+- Beats alternate introduce, test, twist, breathe. One new variable at a time.
+- A failure costs under 10 seconds and shows why it happened. A spike of failures on an easy beat is
+  a camera, collision or respawn bug until proven otherwise.
+- A round has an end: a results moment with a score to beat and one button to go again.
+- No fake timers, no streaks that punish a day off, no paying to skip frustration you built.
+
+A sandbox or social game replaces the round with goals the player sets; say so in CONCEPT.md and
+give it visible escalation instead.
+
+Bots prove the game can be finished and show the difficulty curve. They cannot tell you it is fun.
+Play it with real input on desktop and a phone layout and note where you hesitated, got bored or
+wanted another go. Report what you saw and what is untested.
 
 ## Art direction and feedback
 
-Choose an asset/shape language, palette, lighting hierarchy and focal landmarks from the game's fantasy. UI should fit that world; chunky toy UI is one treatment, not every game's default. Preserve legible interactive affordances. Scale feedback to meaning: quiet response for routine input, layered emphasis for a rare payoff. Constant particles, shake and number popups flatten emphasis and obstruct play. Reduced motion and clear sound levels are part of craft.
+Pick a shape language, a palette, a lighting mood and landmarks from the game's fantasy, and make the
+UI part of that world. Feedback scales with meaning: a small answer for routine input, the full
+stack for the rare payoff. Particles, shake and popups on everything flatten the payoff and hide the
+play.
 
-Before expanding, capture arrival, gameplay-height hero moment, first payoff, failure recovery and a phone view. Compare them to the intended reference: do they communicate the same world and action? Fix flat repetition and random props as design issues, not by adding effects. Use geometry-quality.md for all important generated models.
+Before expanding, capture arrival, the hero moment at player height, the first payoff, a failure and
+recovery, and a phone view. Put them beside the references. If they don't show the same world and
+action, fix the composition (repetition, random props, empty ground), not the effects. Use
+geometry-quality.md for every important model.
 
-Record acceptance criteria in CONCEPT.md/SESSION.md. Review the largest weakness first, group fixes, and repeat tests when new changes justify them. A fixed round count or passing traversal bot is not an artistic quality gate.
+Review the largest weakness first and fix by layer. A bot visiting every platform is not a finished
+game.

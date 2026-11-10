@@ -68,7 +68,9 @@ and why); the docs give the facts. When they disagree on a fact, the docs win: f
 - **Files are the source.** Code changes go in `src/` and reach Studio with `rbxgame push`. World edits
   made in Studio are exported with `rbxgame save` before anything closes.
 - **A game is a skill to get better at.** Before art, the core verb needs a judgement in it (timing,
-  distance, aim, route, risk). Design the session beat by beat with an appropriate challenge/recovery curve; scoring, lives and stars are choices for the genre, not universal requirements. A precise bot must finish it, and a bot with a person's errors must show a
+  distance, aim, route, risk). Design the session beat by beat (introduce, test, twist, breathe) and
+  give it stakes and a score the player can beat; drop one only when the genre has a better
+  answer, and write that answer down. A precise bot must finish it, and a bot with a person's errors must show a
   gentle curve (`references/mechanics-and-fun.md`). A first version without this was rejected as "an
   obby for babies".
 - **Look before you claim.** Capture the game (`rbxgame shots`, `studio shot`, `rbxgame tour`) and look at
