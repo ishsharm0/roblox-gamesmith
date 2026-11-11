@@ -3,6 +3,28 @@
 Read this before CONCEPT.md is final and again before the first playtest. Pretty screens on top of a
 trivial verb are still a trivial game.
 
+## The checklist, for any genre
+
+Whatever the game is (aiming, building, racing, collecting, fighting, managing), it is not ready for an
+art pass until each line has a concrete answer in CONCEPT.md:
+
+1. **Verb:** the one thing the player does every few seconds, and what they have to *judge* to do it
+   well (timing, distance, angle, order, risk). No judgement, no game.
+2. **Failure:** what going wrong looks like, what it costs, and how fast the player is back in.
+3. **Mastery:** what a good player does that a new one can't, and how the game shows it (score, combo,
+   stars, time, a rank).
+4. **One new thing at a time:** the list of ideas the game introduces, in order, each first met alone
+   and safe, then combined. Fewer than four ideas is a demo.
+5. **Decision:** a real choice that recurs (safe or greedy, spend or save, which target first).
+6. **Feedback:** every input and every outcome answered within 100 ms by motion and sound; the best
+   outcome is the loudest thing in the game.
+7. **Assist that fades:** the guide a new player gets (a preview, a highlight, a slower start) and when
+   it goes away.
+8. **Reason to go again:** what the results screen shows that makes one more round obvious.
+
+The rest of this file is how one game learned each line the hard way. The examples are from a jumping
+game; the rules are not about jumping. `references/reference-game.md` has that game's specifics.
+
 ## What the person rejected
 
 Lily Pad Leap v2 had a title screen, a tutorial, results and a nice UI, and the person said: "way too
@@ -109,6 +131,20 @@ it several times and read:
 - **Where does it fail?** Splashes per stage are the difficulty curve; a cluster in one place is either
   a fairness bug or a spike to smooth. Each cluster in the test game was a bug from the list above.
 - **How long?** About a minute for a precise bot here; humans take two to three.
+
+The hook is the same in every genre; only what `act` means changes:
+
+| Genre | `act(amount)` means | `busy` is true while | The precise bot computes | What to read from runs |
+|---|---|---|---|---|
+| Charge and release (jump, throw, golf, cannon) | release at this charge 0..1 | in flight, animating | the charge for the target distance from the game's own ballistics | misses per level, shots used, stars |
+| Aim and shoot | fire at an aim point (pass a second argument or set an attribute for the target) | reloading, projectile live | the target's position plus lead | accuracy, time to clear, damage taken |
+| Collect and upgrade (simulator, tycoon) | do the next purchase or collection the hook reports as best | walking, on cooldown | the cheapest upgrade with the best return | currency per minute over time: it must rise, with no dead minutes |
+| Racing and movement | steer toward the next gate with this throttle | never | the racing line through gate centres | lap times, wall hits, where it slows |
+| Wave survival, combat | attack the nearest threat or retreat if health is low | attack recovering | the kill order by danger | wave reached, deaths per wave |
+| Puzzle, placement | place this piece at the hook's suggested cell | piece settling | the solver's move | levels solved, moves over par |
+
+Give the hook a third call, `Invoke("state")`, returning a small table (level, score, lives, what is
+next) so the bot and the tours can report progress without reaching into game internals.
 
 ### Then a bot that misses like a person (required)
 

@@ -86,3 +86,8 @@ marked **(verified)** were hit and fixed while building Lily Pad Leap (`referenc
 |---|---|---|
 | Game moderated | unfiltered player text, off-platform links, wrong maturity rating | filter all shown text; fill the questionnaire honestly |
 | Inserted model does strange things | a hidden script (backdoor) | audit every inserted asset (`security.md`) |
+- **StreamingEnabled on a small arena.** The template turns streaming on (right for big worlds). On a
+  small single-arena game it buys nothing and makes distant parts absent on the client, so a client bot,
+  a scripted camera or an aim raycast can find nil where the server sees a part. For an arena under
+  about 1,000 studs across, set `"StreamingEnabled": false` in `default.project.json`, or `WaitForChild`
+  and `Player:RequestStreamAroundAsync` before reading far instances. (Found in the Topple Toys cold build.)

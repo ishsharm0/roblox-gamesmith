@@ -108,6 +108,24 @@ Shape falloff with the emitter's distance attenuation curve (volume per distance
 | CC0 / royalty-free libraries (e.g. Kenney audio, Sonniss GDC bundles, freesound CC0) | Yes if the licence allows commercial use and redistribution inside a game | Keep a `CREDITS.md` with source and licence per file |
 | Commercial songs, game rips, "no copyright" YouTube music | No | Copyright strikes remove the audio and can action the account |
 
+**Finding a sound from the shell (no upload, no asset id to hand):**
+
+```bash
+studio call search_asset '{"query":"wooden block impact","assetType":"Audio","scope":"creator_store","audioMaxDuration":3}'
+studio call search_asset '{"query":"calm marimba loop","assetType":"Audio","scope":"creator_store","audioMinDuration":40}'
+```
+
+Each hit has a name, creator and id; use it as `rbxassetid://<id>`. Prefer hits by Roblox and its partners
+(APM Music, Pro Sound Effects, Monstercat): they are public and licensed for experiences. Take two or
+three candidates per sound, and note in NOTES.md that they were chosen by name and need a listen. Search
+for the action, not the object ("short pop", "soft thud", "coin pickup bright"); cap effects at 3 s.
+
+**Built-in fallbacks** ship with every client and need no search: `rbxasset://sounds/action_jump.mp3`,
+`action_jump_land.mp3`, `action_get_up.mp3`, `action_falling.mp3`, `impact_water.mp3`,
+`impact_explosion_03.mp3`, `volume_slider.ogg` (a clean tick). Pitch them with `PlaybackSpeed` (0.5 to
+2.5) to get a family of sounds from one file: a rising pitch per combo step, a low thud from a landing.
+They are placeholders for a prototype; a finished game uses Creator Store sounds and a music bed.
+
 Upload rules: you must hold the rights; single track `.mp3`/`.ogg`/`.wav`/`.flac`; under 20 MB and 7 minutes; 48 kHz or lower; mono/stereo/3.0/5.1. ID-verified accounts can import 2,000 audio assets per 30 days, unverified 100. Uploaded audio is private to you until you grant use to specific experiences/users. https://create.roblox.com/docs/en-us/audio/assets.md
 
 No AI-generated music or voice for this user unless they opt in (`AudioTextToSpeech` exists; treat it like other generation tools: off by default).

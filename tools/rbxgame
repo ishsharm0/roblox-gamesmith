@@ -78,7 +78,8 @@ def studio_window_open(place):
     # or silently skip exporting the existing project's world.
     listed = subprocess.run([sys.executable, STUDIO, "list"], capture_output=True, text=True, timeout=60)
     if listed.returncode:
-        raise SystemExit("Cannot safely determine open Studio windows; no new window was launched.")
+        raise SystemExit("Cannot safely determine open Studio windows; no new window was launched.\n"
+                         + (listed.stdout + listed.stderr).strip()[-600:])
     try:
         entries = json.loads(listed.stdout).get("studios", [])
     except (ValueError, AttributeError):
@@ -169,13 +170,19 @@ def cmd_check(a):
     files = [str(p) for p in Path("src").rglob("*.luau") if "Vendor" not in p.parts]
     if not files:
         raise SystemExit("no source files to check")
+    if "--fix" in a:
+        sh(["stylua", *files], check=False)
     for tool in (["selene", *files], ["stylua", "--check", *files]):
         r = sh(tool, check=False, capture=True)
         out = (r.stdout + r.stderr).strip()
         print(f"== {tool[0]}: {'ok' if r.returncode == 0 else 'problems'}")
         if r.returncode:
             ok = False
-            print("\n".join(out.splitlines()[:60]))
+            if tool[0] == "stylua":   # the diff is noise; the fix is one command
+                bad = sorted({l.split()[-1].rstrip(":") for l in out.splitlines() if l.startswith("Diff in")})
+                print(f"{len(bad)} file(s) need formatting: run `stylua src` (or `rbxgame check --fix`)\n" + "\n".join(bad[:20]))
+            else:
+                print("\n".join(out.splitlines()[:60]))
     # pure-rule unit tests (Lune) run with every check, so a changed rule cannot leave a stale test
     for t in sorted(Path("tests").glob("*.luau")) if Path("tests").is_dir() else []:
         r = sh(["lune", "run", str(t)], check=False, capture=True)

@@ -3,6 +3,8 @@
 # `rbxgame shots` shows the world from fixed cameras; this shows the real camera, HUD, feedback and
 # every zone in order. Judge this sheet before saying how the game looks or plays.
 #
+# The bot line uses the same BotHook the game exposes for scenarios/human-bot.luau (busy / act). Swap the
+# amount for your game's judgement (distance to target, aim) so the bot plays well enough to show every zone.
 # Replace the two client lines: the first enters gameplay (press Play, skip the intro), the second
 # starts your bot in a task.spawn so the tour can keep capturing while it plays.
 play
@@ -10,7 +12,7 @@ wait 8
 client game.ReplicatedStorage.Action:FireServer("Begin")
 wait 3
 shot start
-client task.spawn(function() local hook = game.Players.LocalPlayer:FindFirstChild("PlayTest") if hook then for _ = 1, 60 do hook:Invoke("step") task.wait(0.3) end end end)
+client task.spawn(function() local hook = game.Players.LocalPlayer:WaitForChild("BotHook", 10) if not hook then return end for _ = 1, 80 do local t = os.clock() while hook:Invoke("busy") and os.clock() - t < 4 do task.wait(0.05) end hook:Invoke("act", 0.5 + math.random() * 0.3) task.wait(0.3) end end)
 wait 3
 shot play-01
 wait 3

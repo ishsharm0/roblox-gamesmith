@@ -38,6 +38,12 @@ CHUNK = 60_000   # characters of base64 per execute_luau round trip (its text re
 
 class MCP:
     def __init__(self):
+        if REMOTE:
+            probe = subprocess.run(SSH + [REMOTE, "echo up"], capture_output=True, text=True)
+            if probe.stdout.strip() != "up":
+                raise SystemExit(f"The Studio machine ({REMOTE}) is unreachable over SSH: it is off, asleep or off the "
+                                 "network. Wake it (a wake-on-LAN tool if you have one) or ask the person; do not "
+                                 "fall back to opening Studio on this computer.")
         cmd = SSH + [REMOTE, 'cmd /c "%LOCALAPPDATA%\\Roblox\\mcp.bat"'] if REMOTE else [BIN]
         self.p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                   stderr=subprocess.DEVNULL, bufsize=0)
@@ -114,7 +120,7 @@ schtasks /run /tn StudioRemoteOpen | Out-Null
 def remote_record(out, seconds, title):
     """Film the Studio window on the PC. The capture has to run on the signed-in desktop, so a small
     script is run by an interactive scheduled task: it finds the window, brings it forward, and lets
-    ffmpeg grab exactly that window. The MP4 is then copied back."""
+    ffmpeg film the screen (Desktop Duplication: a window grab comes out black for a GPU view). The MP4 is then copied back."""
     remote_ps(f'''
 $dir = "$env:USERPROFILE\\rbx-remote"
 New-Item -ItemType Directory -Force $dir | Out-Null
@@ -122,11 +128,15 @@ Remove-Item "$dir\\rec.mp4","$dir\\rec.log","$dir\\rec.done" -ErrorAction Silent
 $script = @"
 `$p = Get-Process RobloxStudioBeta | Where-Object {{ `$_.MainWindowTitle -like '*{title}*' }} | Select-Object -First 1
 if (-not `$p) {{ 'no Studio window with that title' | Set-Content '$dir\\rec.log'; 'x' | Set-Content '$dir\\rec.done'; exit }}
-Add-Type -Namespace W -Name U -MemberDefinition '[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);'
+Add-Type -Namespace W -Name U -MemberDefinition '[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] public static extern void keybd_event(byte k, byte s, uint f, UIntPtr e);'
+[W.U]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero); [W.U]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)
 [W.U]::ShowWindow(`$p.MainWindowHandle, 3) | Out-Null
 [W.U]::SetForegroundWindow(`$p.MainWindowHandle) | Out-Null
-Start-Sleep -Milliseconds 700
-& ffmpeg -y -hide_banner -loglevel error -f gdigrab -framerate 30 -t {seconds} -i "title=`$(`$p.MainWindowTitle)" -vf "scale=1280:-2" -c:v libx264 -preset veryfast -crf 24 -pix_fmt yuv420p '$dir\\rec.mp4' 2> '$dir\\rec.log'
+Start-Sleep -Milliseconds 900
+& ffmpeg -y -hide_banner -loglevel error -f lavfi -i "ddagrab=framerate=30:output_idx=0,hwdownload,format=bgra" -t {seconds} -vf "scale=1280:-2" -c:v libx264 -preset veryfast -crf 24 -pix_fmt yuv420p '$dir\\rec.mp4' 2> '$dir\\rec.log'
+if (-not (Test-Path '$dir\\rec.mp4') -or (Get-Item '$dir\\rec.mp4').Length -lt 20000) {{
+  & ffmpeg -y -hide_banner -loglevel error -f gdigrab -framerate 30 -t {seconds} -i desktop -vf "scale=1280:-2" -c:v libx264 -preset veryfast -crf 24 -pix_fmt yuv420p '$dir\\rec.mp4' 2>> '$dir\\rec.log'
+}}
 'x' | Set-Content '$dir\\rec.done'
 "@
 Set-Content -Path "$dir\\rec.ps1" -Value $script -Encoding UTF8
