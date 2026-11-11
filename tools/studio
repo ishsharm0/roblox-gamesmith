@@ -9,6 +9,9 @@
   studio schema <tool>                 one tool's full input schema
   studio state | play | stop | console
   studio open <place.rbxl|.rbxlx>      open a local place file in a new Studio window and wait for it
+  studio record out.mp4 [--seconds 20] [--title <text in the window title>]   (STUDIO_REMOTE only) film the
+                                       Studio window on the PC with sound-free screen capture; start a
+                                       playtest first. For watching game feel, pacing and trailers.
   studio export <game.Path> <out.rbxm> serialize an instance (a map, a model) to a model file on disk
   studio import <in.rbxm> [game.Path]  load a model file into the open place (default parent: Workspace)
 
@@ -108,6 +111,38 @@ schtasks /run /tn StudioRemoteOpen | Out-Null
 ''')
 
 
+def remote_record(out, seconds, title):
+    """Film the Studio window on the PC. The capture has to run on the signed-in desktop, so a small
+    script is run by an interactive scheduled task: it finds the window, brings it forward, and lets
+    ffmpeg grab exactly that window. The MP4 is then copied back."""
+    remote_ps(f'''
+$dir = "$env:USERPROFILE\\rbx-remote"
+New-Item -ItemType Directory -Force $dir | Out-Null
+Remove-Item "$dir\\rec.mp4","$dir\\rec.log","$dir\\rec.done" -ErrorAction SilentlyContinue
+$script = @"
+`$p = Get-Process RobloxStudioBeta | Where-Object {{ `$_.MainWindowTitle -like '*{title}*' }} | Select-Object -First 1
+if (-not `$p) {{ 'no Studio window with that title' | Set-Content '$dir\\rec.log'; 'x' | Set-Content '$dir\\rec.done'; exit }}
+Add-Type -Namespace W -Name U -MemberDefinition '[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);'
+[W.U]::ShowWindow(`$p.MainWindowHandle, 3) | Out-Null
+[W.U]::SetForegroundWindow(`$p.MainWindowHandle) | Out-Null
+Start-Sleep -Milliseconds 700
+& ffmpeg -y -hide_banner -loglevel error -f gdigrab -framerate 30 -t {seconds} -i "title=`$(`$p.MainWindowTitle)" -vf "scale=1280:-2" -c:v libx264 -preset veryfast -crf 24 -pix_fmt yuv420p '$dir\\rec.mp4' 2> '$dir\\rec.log'
+'x' | Set-Content '$dir\\rec.done'
+"@
+Set-Content -Path "$dir\\rec.ps1" -Value $script -Encoding UTF8
+Set-Content -Path "$dir\\rec.bat" -Encoding ASCII -Value "@echo off`r`npowershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$dir\\rec.ps1`""
+schtasks /create /tn StudioRemoteRecord /tr "$dir\\rec.bat" /sc once /st 00:00 /it /f | Out-Null
+schtasks /run /tn StudioRemoteRecord | Out-Null
+$t = 0
+while (-not (Test-Path "$dir\\rec.done") -and $t -lt {seconds + 60}) {{ Start-Sleep 1; $t++ }}
+if (Test-Path "$dir\\rec.log") {{ Get-Content "$dir\\rec.log" }}
+''', timeout=seconds + 120)
+    r = subprocess.run(["scp", "-q", "-o", "BatchMode=yes", f"{REMOTE}:rbx-remote/rec.mp4", out])
+    if r.returncode or not os.path.exists(out):
+        raise SystemExit("recording failed (is a Studio window with that title open on the PC desktop?)")
+    print(f"recorded {seconds}s -> {os.path.abspath(out)}")
+
+
 def hide_studio():
     if REMOTE:
         return
@@ -187,6 +222,14 @@ def main():
     if "--studio" in a:
         i = a.index("--studio"); want = a[i + 1]; del a[i:i + 2]
     cmd = a[0]
+    if cmd == "record":
+        if not REMOTE:
+            raise SystemExit("studio record needs STUDIO_REMOTE (it films the Studio window on that PC)")
+        out = next((x for x in a[1:] if x.endswith(".mp4")), "studio-record.mp4")
+        secs = int(a[a.index("--seconds") + 1]) if "--seconds" in a else 20
+        title = a[a.index("--title") + 1] if "--title" in a else (want or "Roblox Studio")
+        remote_record(out, secs, os.path.splitext(title)[0])
+        return
     if cmd == "open":
         place = os.path.abspath(a[1])
         # -g: don't bring Studio to the front; -j: launch hidden. The person is using this Mac, so Studio

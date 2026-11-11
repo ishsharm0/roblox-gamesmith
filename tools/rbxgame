@@ -269,6 +269,8 @@ def cmd_tour(a):
          click <path under PlayerGui>        a real mouse click, e.g. PondHUD.Root.Welcome.Begin
          client <one line of Luau>           run on the client (set a test-hook attribute, fire a remote)
          server <one line of Luau>           run on the server (force a state for a screen)
+         record <seconds> <name>             (STUDIO_REMOTE) film the Studio window from here on, without
+                                             pausing the tour; the MP4 lands in shots/ when the tour ends
        --device picks a Studio device-simulator device by name (landscape) for the whole tour."""
     p = project()
     place = os.path.basename(place_path(p))
@@ -286,6 +288,7 @@ def cmd_tour(a):
                  "task.wait(0.3) svc:SetOrientationAsync(Enum.ScreenOrientation.LandscapeLeft) task.wait(0.3) return i.Name end end return 'no device'")
         print("device:", (r.stdout or r.stderr).strip())
     shots = []
+    films = []
     try:
         for st in steps:
             cmd, _, rest = st.partition(" ")
@@ -305,6 +308,11 @@ def cmd_tour(a):
                 r = studio("call", "user_mouse_input", args, check=False)
                 if r.returncode:
                     print("click failed:", rest, (r.stdout + r.stderr).strip()[:200])
+            elif cmd == "record":
+                secs, _, name = rest.partition(" ")
+                out = os.path.abspath(f"shots/tour-{tag}-{name or 'film'}.mp4")
+                films.append((out, subprocess.Popen([STUDIO, "--studio", place, "record", out, "--seconds", secs],
+                                                    env=ENV, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)))
             elif cmd in ("client", "server"):
                 r = luau(rest if "return" in rest else rest + " return 'ok'", "Client" if cmd == "client" else "Server")
                 if r.returncode:
@@ -312,6 +320,8 @@ def cmd_tour(a):
             else:
                 print("unknown tour step:", st)
     finally:
+        for out, proc in films:   # let a film finish before play stops, or it records the edit view
+            print((proc.communicate()[0] or "").strip()[-300:])
         studio("stop", check=False)
         if dev:
             luau("game:GetService('StudioDeviceSimulatorService'):StopSimulationAsync() return 'ok'")

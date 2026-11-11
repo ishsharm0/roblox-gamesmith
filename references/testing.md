@@ -57,6 +57,13 @@ studio luau scenarios/leap-bot.luau --ctx Client  # during a play session you st
 - **Play sheet**: `rbxgame tour scenarios/play-tour.txt` runs a bot through a session and captures a frame every
   few seconds: the only capture that shows the real camera, HUD and feedback together. A game that owns its
   camera returns identical frames from `rbxgame shots --play`; use this instead.
+- **Play film** (Studio on a second machine, `STUDIO_REMOTE`): a tour step `record 30 gameplay` films the
+  Studio window for 30 s while the bot keeps playing; the MP4 lands in `shots/`. Stills cannot show pacing,
+  camera motion, feedback timing or animation; a film can. Watch it yourself as a contact sheet
+  (`ffmpeg -i film.mp4 -vf fps=2,scale=480:-1,tile=6x5 film-sheet.jpg`) and, if you have a video-capable
+  model to hand, have it review the film as a game: where a new player is lost, which actions land with
+  no feedback, the longest stretch where nothing new happens. Treat its notes as a second opinion and
+  check each on a still. `studio record out.mp4 --seconds 20` films outside a tour.
 - **Camera sheet**: `rbxgame shots` captures the cameras in `shots.json` for an art review.
 
 ## What to test for every game
