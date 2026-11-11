@@ -2,11 +2,25 @@
 #   rbxgame tour scenarios/ui-tour.txt                  (desktop)
 #   rbxgame tour scenarios/ui-tour.txt --device "iPhone 1"   (phone, landscape)
 # Steps: play | stop | wait <s> | shot <name> | click <path under PlayerGui> | client <Luau> | server <Luau>
-# Studio's simulated clicks can miss on a simulated phone; give the HUD a test-hook attribute (e.g. "Modal")
-# and force screens from the server so the phone tour still reaches every screen.
+# Studio's simulated clicks can miss on a simulated phone, so each click is followed by the same intent fired
+# from the client; the server ignores the duplicate. Paths come from src/client/Hud.luau (ScreenGui "Hud").
 play
 wait 8
 shot title
-# click HUD.Root.Title.Play
-# wait 2
-# shot first-action
+click Hud.Root.Title.Face.Play
+client game.ReplicatedStorage.Action:FireServer("Start")
+wait 1.5
+shot play
+client for _ = 1, 3 do game.ReplicatedStorage.Action:FireServer("Act", 0) task.wait(0.4) end
+wait 3
+shot results
+click Hud.Root.Results.Face.Again
+client game.ReplicatedStorage.Action:FireServer("Start")
+wait 1.5
+shot play-again
+client for _ = 1, 3 do game.ReplicatedStorage.Action:FireServer("Act", 0) task.wait(0.4) end
+wait 2
+click Hud.Root.Results.Face.Menu
+client game.ReplicatedStorage.Action:FireServer("Menu")
+wait 2
+shot title-again

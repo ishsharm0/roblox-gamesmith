@@ -23,7 +23,7 @@ made on purpose, it is fun within 30 seconds, it is a skill to get better at, an
 
 1. `rbxgame doctor`. Fix anything marked MISS before building. If Studio isn't connected, ask the
    person to open Studio and turn on "Enable Studio as MCP server".
-2. New game: read `references/creative-quality.md` and `workflows/make-a-game.md` before the first file. It sets the order and the bar.
+2. New game: read `references/creative-quality.md` and `workflows/make-a-game.md` before the first file. It sets the order and the bar. `rbxgame new` scaffolds a playable starter game: edit it, don't rewrite it (`templates/project/STARTER.md`).
 3. Existing game or a single task: find it in **Routing** below and read that file first.
 4. Unsure how something is done: `references/reference-game.md` shows the patterns a tested game used.
 

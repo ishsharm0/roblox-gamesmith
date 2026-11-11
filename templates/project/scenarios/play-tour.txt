@@ -1,18 +1,17 @@
-# The game as the player sees it: start a session, let a bot play, capture a frame every few seconds.
+# The game as the player sees it: start a round, let a bot play, capture a frame every few seconds.
 # Run: rbxgame tour scenarios/play-tour.txt [--device "iPhone 1"]   -> shots/tour-<tag>-sheet.jpg
 # `rbxgame shots` shows the world from fixed cameras; this shows the real camera, HUD, feedback and
-# every zone in order. Judge this sheet before saying how the game looks or plays.
+# the results screen. Judge this sheet before saying how the game looks or plays.
 #
-# The bot line uses the same BotHook the game exposes for scenarios/human-bot.luau (busy / act). Swap the
-# amount for your game's judgement (distance to target, aim) so the bot plays well enough to show every zone.
-# Replace the two client lines: the first enters gameplay (press Play, skip the intro), the second
-# starts your bot in a task.spawn so the tour can keep capturing while it plays.
+# The bot uses the BotHook the game exposes (busy / act / state; src/client/Input.luau): it waits until it
+# may act, reads the ideal amount from `state`, and acts with a small error. Every 8th act misses on purpose
+# so the sheet shows a lost life and the results. Swap the ideal amount for your game's judgement.
 play
 wait 8
-client game.ReplicatedStorage.Action:FireServer("Begin")
-wait 3
+client game.ReplicatedStorage.Action:FireServer("Start")
+wait 2
 shot start
-client task.spawn(function() local hook = game.Players.LocalPlayer:WaitForChild("BotHook", 10) if not hook then return end for _ = 1, 80 do local t = os.clock() while hook:Invoke("busy") and os.clock() - t < 4 do task.wait(0.05) end hook:Invoke("act", 0.5 + math.random() * 0.3) task.wait(0.3) end end)
+client task.spawn(function() local hook = game.Players.LocalPlayer:WaitForChild("BotHook", 10) if not hook then return end for n = 1, 80 do local t = os.clock() while hook:Invoke("busy") and os.clock() - t < 4 do task.wait(0.05) end local s = hook:Invoke("state") if s.phase ~= "Play" then break end if s.target then hook:Invoke("act", s.target.ideal + (n % 8 == 0 and 0.35 or (math.random() - 0.5) * 0.04)) end task.wait(0.25) end end)
 wait 3
 shot play-01
 wait 3
@@ -29,5 +28,7 @@ wait 3
 shot play-07
 wait 3
 shot play-08
-wait 6
-shot end
+wait 3
+shot play-09
+wait 5
+shot results

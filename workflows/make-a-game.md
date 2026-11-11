@@ -48,7 +48,7 @@ must persist. Do not force repeat tutorials on returning players.
 
 ## 3. Scaffold and greybox
 
-`rbxgame new <dir> --name "<Name>"`, `cd <dir>`, `rbxgame open`. Build the play space from code: one ModuleScript
+`rbxgame new <dir> --name "<Name>"` copies a small playable game (title, rounds, results, saving, sounds, bot hook, scenarios): read its `STARTER.md` and replace its placeholder verb and arena before adding systems. Then `cd <dir>`, `rbxgame open`. Build the play space from code: one ModuleScript
 per area in `src/server/World/` with a `Build(parent)` that clears and rebuilds its own folder (idempotent,
 yields between chunks). Run it in Studio with `rbxgame push` then `studio luau` (`require(game.
 ServerScriptService.Server.World.<Area>).Build(workspace.Map)`), look, adjust, run again. Terrain is not

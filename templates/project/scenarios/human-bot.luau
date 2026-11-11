@@ -2,13 +2,13 @@
 -- failures per stage and the beats that fail most (failures / tries). Method: references/mechanics-and-fun.md.
 --
 -- The game's client exposes a BindableFunction `BotHook` under the player:
---   BotHook:Invoke("busy")          -> true while the player can't act (mid-air, animating, input locked)
+--   BotHook:Invoke("busy")          -> true while the player can't act (charging, animating, input locked)
 --   BotHook:Invoke("act", amount)   -> performs the core verb with amount 0..1 (charge, power, timing)
--- and the server publishes these player attributes: Phase ("Run" while playing, "Results" at the end),
--- Stage, Progress (index of the last beat cleared in this stage), Fails (count of failures).
--- Fill in the GAME-SPECIFIC functions below; leave the harness alone. Run against a tested game through an
--- adapter: precise and casual profiles finished every run; failures during automatic movement are
--- reported separately as "<stage>.<progress> auto".
+--   BotHook:Invoke("state")         -> a small table (phase, score, lives, the current target incl. the ideal amount)
+-- The starter game (Pop) ships all three in src/client/Input.luau. The GAME-SPECIFIC functions below say how
+-- to read the game: which Phase value means "playing", the stage, the progress counter, the failure
+-- counter, the ideal amount for the current target. Replace them with your game's; leave the harness alone.
+-- Failures that happen without an input (a bounce, a conveyor) are reported separately as "<stage>.<progress> auto".
 --
 -- Usage (runs in the background; MCP calls time out after ~5 minutes):
 --   studio play
@@ -20,45 +20,55 @@ local hook = p:WaitForChild("BotHook")
 local action = game.ReplicatedStorage:WaitForChild("Action") -- your request remote
 
 ------------------------------------------------------------------ GAME-SPECIFIC
--- The next objective's position, or nil if there is none right now.
-local function target(): Vector3?
-	return nil -- e.g. workspace.Map.Course[("Pad_%d_%02d"):format(stage, progress + 1)].PrimaryPart.Position
+local RUN = "Play" -- the Phase value while a round is being played
+local Config = require(game.ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+local function stageNow(): number
+	return 1 -- Pop has one stage; a game with levels returns the current one
 end
--- The perfect input for a target at horizontal distance d, and how visible the guide is in this stage
--- ("full" | "arc" | "half" | "none"; more guide = less judgement error).
-local function ideal(d: number, _stage: number): (number, string)
-	return math.clamp(d / 30, 0, 1), "none"
+local function progressNow(): number
+	return p:GetAttribute("Score") or 0 -- changes whenever a beat is cleared; Pop clears one per hit
+end
+local function failCount(): number
+	return Config.Lives - (p:GetAttribute("Lives") or Config.Lives) -- count of failures so far this run
+end
+-- The perfect input for the current objective, and how visible the guide is in this stage
+-- ("full" | "arc" | "half" | "none"; more guide = less judgement error). nil when there is no objective now.
+local function ideal(): (number?, string)
+	local state = hook:Invoke("state")
+	if state and state.target then
+		return state.target.ideal, "full" -- Pop draws the whole sweet zone
+	end
+	return nil, "none"
 end
 -- Wait here for hazards a person would wait for (a platform under water, a closing door, a telegraphed
 -- attack). Skipping this makes a precise bot's retries sync with a hazard timer and fail forever.
 local function waitForSafe(_stage: number) end
 -- Start or restart a run from whatever screen is showing.
 local function startRun()
-	local phase = p:GetAttribute("Phase")
-	if phase == "Results" then
-		action:FireServer("Restart")
-	elseif phase ~= "Run" then
-		action:FireServer("Begin")
+	if p:GetAttribute("Phase") ~= RUN then
+		action:FireServer("Start")
 	end
 end
 ------------------------------------------------------------------ HARNESS
 
-local PROFILES = { -- timing error (s), judgement error (fraction of distance) by guide level, reaction (s)
-	precise = { timing = 0, judge = { full = 0, arc = 0, half = 0, none = 0 }, react = 0.1 }, -- must finish every run
-	careful = { timing = 0.035, judge = { full = 0.015, arc = 0.04, half = 0.06, none = 0.08 }, react = 0.25 },
-	casual = { timing = 0.06, judge = { full = 0.03, arc = 0.07, half = 0.1, none = 0.13 }, react = 0.4 },
-	new = { timing = 0.09, judge = { full = 0.05, arc = 0.1, half = 0.14, none = 0.18 }, react = 0.55 },
-}
-local INPUT_SECONDS = 0.85 -- how long the input takes to sweep 0 -> 1 (converts timing error to amount)
+local PROFILES =
+	{ -- timing error (s), judgement error (fraction of the ideal amount) by guide level, reaction (s)
+		precise = { timing = 0, judge = { full = 0, arc = 0, half = 0, none = 0 }, react = 0.1 }, -- must finish every run
+		careful = {
+			timing = 0.035,
+			judge = { full = 0.015, arc = 0.04, half = 0.06, none = 0.08 },
+			react = 0.25,
+		},
+		casual = { timing = 0.06, judge = { full = 0.03, arc = 0.07, half = 0.1, none = 0.13 }, react = 0.4 },
+		new = { timing = 0.09, judge = { full = 0.05, arc = 0.1, half = 0.14, none = 0.18 }, react = 0.55 },
+	}
+local INPUT_SECONDS = Config.ChargeSeconds -- how long the input takes to sweep 0 -> 1 (converts timing error to amount)
 local name = p:GetAttribute("BotProfile") or "casual"
 local prof = PROFILES[name]
 local runs = p:GetAttribute("BotRuns") or 4
 local rng = Random.new(p:GetAttribute("BotSeed") or 7) -- fixed seed: before/after comparisons are fair
 local function gauss(sd: number): number
 	return sd * math.sqrt(-2 * math.log(1 - rng:NextNumber())) * math.cos(2 * math.pi * rng:NextNumber())
-end
-local function attr(n: string): number
-	return p:GetAttribute(n) or 0
 end
 
 local report, spots = {}, {} -- spots["stage.progress"] = { tries, fails }
@@ -67,48 +77,34 @@ p:SetAttribute("BotReport", name .. " | started")
 task.spawn(function()
 	for run = 1, runs do
 		local t = os.clock()
-		while p:GetAttribute("Phase") ~= "Run" and os.clock() - t < 20 do
+		while p:GetAttribute("Phase") ~= RUN and os.clock() - t < 20 do
 			startRun()
 			task.wait(1)
 		end
 		local t0, acts, fails = os.clock(), 0, {}
-		local lastFails = attr("Fails")
-		while p:GetAttribute("Phase") == "Run" and acts < 150 do
+		local lastFails = failCount()
+		while p:GetAttribute("Phase") == RUN and acts < 150 do
 			local wb = os.clock()
 			while hook:Invoke("busy") and os.clock() - wb < 4 do
 				task.wait(0.05)
 			end
-			local stage, progress = attr("Stage"), attr("Progress")
-			if attr("Fails") > lastFails then -- failed during automatic movement (a bounce, a conveyor), not an input
+			local stage, progress = stageNow(), progressNow()
+			if failCount() > lastFails then -- failed during automatic movement (a bounce, a conveyor), not an input
 				local key = ("%d.%d auto"):format(stage, progress)
 				spots[key] = spots[key] or { 0, 0 }
 				spots[key][1] += 1
 				spots[key][2] += 1
 				fails[stage] = (fails[stage] or 0) + 1
-				lastFails = attr("Fails")
+				lastFails = failCount()
 			end
 			waitForSafe(stage)
 			task.wait(prof.react * 0.5) -- a person looks before acting
-			local goal = target()
-			local root = p.Character and p.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
-			-- standing on the "next" objective means the server hasn't counted this landing yet: wait for it
-			local wt = os.clock()
-			while
-				goal
-				and root
-				and os.clock() - wt < 0.8
-				and Vector3.new(goal.X - root.Position.X, 0, goal.Z - root.Position.Z).Magnitude < 2.5
-			do
-				task.wait(0.05)
-				goal = target()
-			end
-			if not (goal and root) then
+			local base, guide = ideal()
+			if not base then
 				task.wait(0.2)
 				continue
 			end
-			local d = Vector3.new(goal.X - root.Position.X, 0, goal.Z - root.Position.Z).Magnitude
-			local _, guide = ideal(d, stage)
-			local judged = ideal(d * (1 + gauss(prof.judge[guide] or prof.judge.none)), stage)
+			local judged = base * (1 + gauss(prof.judge[guide] or prof.judge.none))
 			local amount = judged + gauss(prof.timing / INPUT_SECONDS)
 			local key = ("%d.%d"):format(stage, progress)
 			local spot = spots[key] or { 0, 0 }
@@ -120,7 +116,7 @@ task.spawn(function()
 			-- settles makes the bot blame the game for its own stale input
 			local w = os.clock()
 			while os.clock() - w < 4 do
-				if attr("Fails") > lastFails or attr("Progress") ~= progress or attr("Stage") ~= stage then
+				if failCount() > lastFails or progressNow() ~= progress or stageNow() ~= stage then
 					break
 				end
 				if os.clock() - w > 1.5 and not hook:Invoke("busy") then
@@ -128,15 +124,15 @@ task.spawn(function()
 				end
 				task.wait()
 			end
-			if attr("Fails") > lastFails then
+			if failCount() > lastFails then
 				fails[stage] = (fails[stage] or 0) + 1
 				spot[2] += 1
 				task.wait(0.6) -- the respawn settles
 			end
-			lastFails = attr("Fails")
+			lastFails = failCount()
 		end
 		local perStage = {}
-		for s = 1, math.max(#fails, attr("Stage")) do
+		for s = 1, math.max(#fails, stageNow()) do
 			perStage[s] = tostring(fails[s] or 0)
 		end
 		table.insert(

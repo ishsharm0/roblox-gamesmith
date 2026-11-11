@@ -9,6 +9,7 @@
       "Server": { "$path": "src/server" }
     },
     "StarterPlayer": {
+      "$properties": { "DevComputerMovementMode": "Scriptable", "DevTouchMovementMode": "Scriptable" },
       "StarterPlayerScripts": {
         "Client": { "$path": "src/client" }
       }
