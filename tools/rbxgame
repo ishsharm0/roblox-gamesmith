@@ -261,7 +261,8 @@ def cmd_shots(a):
 def cmd_test(a):
     p = project()
     scen = open(a[0]).read()
-    studio("play"); time.sleep(5)
+    studio("stop", check=False, timeout=60)   # a session left in Play makes the next play hang
+    studio("play", timeout=120); time.sleep(5)
     try:
         r = subprocess.run([STUDIO, "--studio", os.path.basename(place_path(p)), "luau", "-", "--ctx", "Server"],
                            env=ENV, text=True, capture_output=True, input=scen)
@@ -305,7 +306,8 @@ def cmd_tour(a):
         for st in steps:
             cmd, _, rest = st.partition(" ")
             if cmd == "play":
-                studio("play"); time.sleep(1)
+                studio("stop", check=False, timeout=60)
+                studio("play", timeout=120); time.sleep(1)
             elif cmd == "stop":
                 studio("stop", check=False)
             elif cmd == "wait":
