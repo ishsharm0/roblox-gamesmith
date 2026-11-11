@@ -10,11 +10,11 @@ local TweenService = game:GetService("TweenService")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Mood = require(script.Parent.Mood)
 
-local CAMERA_POS = Vector3.new(0, 9, 30)
-local CAMERA_AIM = Vector3.new(0, 7, 0)
+local CAMERA_POS = Vector3.new(0, 10, 25)
+local CAMERA_AIM = Vector3.new(0, 10, 0)
 local EVENING: Mood.Look = {
-	clock = 19.5,
-	brightness = 1.6,
+	clock = 17.8,
+	brightness = 2.2,
 	exposure = 0.2,
 	shift = Color3.fromRGB(150, 170, 255),
 	air = Color3.fromRGB(90, 105, 160),
@@ -80,6 +80,7 @@ function Effects.start()
 		kick = kick:Lerp(Vector3.zero, 1 - math.exp(-9 * dt))
 		camera.CameraType = Enum.CameraType.Scriptable
 		camera.FieldOfView = 70
+		camera.Focus = CFrame.new(CAMERA_AIM)
 		camera.CFrame = CFrame.lookAt(CAMERA_POS, CAMERA_AIM) * CFrame.new(kick)
 	end)
 end

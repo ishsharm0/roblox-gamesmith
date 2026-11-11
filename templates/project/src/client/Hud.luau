@@ -63,7 +63,7 @@ function Hud.start(hooks: Hooks)
 	local _, root = Kit.screen(player:WaitForChild("PlayerGui") :: PlayerGui, "Hud", 10)
 
 	------------------------------------------------------------------ Title
-	local titleFace = Kit.panel(root, { Name = "Title", Size = UDim2.fromOffset(520, 330) })
+	local titleFace = Kit.panel(root, { Name = "Title", Size = UDim2.fromOffset(520, 350) })
 	local title = titleFace.Parent :: Frame
 	title.Visible = false
 	Kit.text(titleFace, {
@@ -89,7 +89,7 @@ function Hud.start(hooks: Hooks)
 		Text = "",
 		TextSize = 26,
 		Size = UDim2.new(1, -60, 0, 32),
-		Position = UDim2.new(0.5, 0, 0, 190),
+		Position = UDim2.new(0.5, 0, 0, 180),
 		AnchorPoint = Vector2.new(0.5, 0),
 	})
 	local playButton = Kit.button(titleFace, {
@@ -313,12 +313,15 @@ function Hud.start(hooks: Hooks)
 
 	------------------------------------------------------------------ state -> screens
 	local shown = ""
+	local screenId = 0 -- bumps on every phase change, so a late star callback cannot paint a newer screen
 	local function refreshPhase()
 		local phase = player:GetAttribute("Phase")
 		if phase == shown or type(phase) ~= "string" then
 			return
 		end
 		shown = phase
+		screenId += 1
+		local mine = screenId
 		title.Visible = false
 		playing.Visible = false
 		results.Visible = false
@@ -339,7 +342,7 @@ function Hud.start(hooks: Hooks)
 			end
 			for i = 1, math.min(3, num("Stars")) do
 				task.delay(0.5 + 0.4 * i, function()
-					if shown ~= Net.Phase.Results then
+					if mine ~= screenId then
 						return
 					end
 					stars[i].TextColor3 = T.Sun

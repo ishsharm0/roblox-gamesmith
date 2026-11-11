@@ -30,9 +30,9 @@ local Config = {
 
 	-- look: RGB triples, so Lune can load this file; Config.color turns one into a Color3
 	Palette = {
-		Floor = { 46, 64, 88 },
+		Floor = { 72, 92, 132 },
 		FloorRim = { 86, 214, 204 },
-		Backdrop = { 30, 40, 66 },
+		Backdrop = { 52, 60, 104 },
 		Orb = { 255, 200, 70 },
 		OrbIdle = { 120, 150, 190 },
 		Perfect = { 255, 200, 70 },

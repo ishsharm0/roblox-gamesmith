@@ -68,7 +68,7 @@ local function endRound(player: Player, s: Session)
 	player:SetAttribute("Stars", Rules.starsFor(s.score, Config))
 	s.phase = Net.Phase.Results
 	player:SetAttribute("Phase", s.phase) -- last: the client reads the numbers above when this changes
-	task.spawn(PlayerData.save, player)
+	PlayerData.saveSoon(player)
 end
 
 local function act(player: Player, s: Session, amount: any)
@@ -76,6 +76,10 @@ local function act(player: Player, s: Session, amount: any)
 		return
 	end
 	local now = os.clock()
+	if now >= s.endsAt then
+		endRound(player, s) -- the timer loop has not run yet; this Act came too late
+		return
+	end
 	local since = now - s.lastAct
 	if since < Config.ActInterval then
 		return

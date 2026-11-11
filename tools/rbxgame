@@ -156,7 +156,7 @@ def cmd_push(a):
         parent = game_path(parts[:-1])
         r = subprocess.run([STUDIO, "--studio", os.path.basename(place_path(p)), "luau", "-"], env=ENV, text=True,
                            capture_output=True,
-                           input=f'local old = {parent}:FindFirstChild("{parts[-1]}") if old then old:Destroy() end return "ok"')
+                           input=f'for _, old in {parent}:GetChildren() do if old.Name == "{parts[-1]}" then old:Destroy() end end return "ok"')
         if r.returncode:
             raise SystemExit(r.stdout + r.stderr)
         r = studio("import", out, parent)

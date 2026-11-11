@@ -17,6 +17,7 @@ local Input = {}
 Input.onRelease = nil :: ((amount: number) -> ())?
 
 local heldAt: number? = nil
+local holder: InputObject? = nil -- the press that began the charge; only its release ends it
 local cooldownUntil = 0
 local botHolding = false
 
@@ -47,6 +48,7 @@ local function setHeld(held: boolean, forced: number?)
 	end
 	local amount = forced or Rules.meter(os.clock() - heldAt, Config)
 	heldAt = nil
+	holder = nil
 	cooldownUntil = os.clock() + Config.ActInterval
 	if not playing() then
 		return
@@ -73,23 +75,38 @@ function Input.start()
 		if processed then
 			return -- a button or the chat took it
 		end
-		if isPress(input) then
+		if isPress(input) and heldAt == nil then
 			setHeld(true)
+			if heldAt ~= nil then
+				holder = input
+			end
 		end
 	end)
 	UserInputService.InputEnded:Connect(function(input)
-		if isPress(input) then
+		local began = holder
+		if
+			began
+			and isPress(input)
+			and (
+				input == began
+				or (
+					input.UserInputType ~= Enum.UserInputType.Touch
+					and input.UserInputType == began.UserInputType
+					and input.KeyCode == began.KeyCode
+				)
+			)
+		then
 			setHeld(false)
 		end
 	end)
 
 	-- a new phase drops any charge in progress, so a missed release can never leave the verb stuck
 	player:GetAttributeChangedSignal("Phase"):Connect(function()
-		heldAt = nil
+		heldAt, holder = nil, nil
 	end)
 	-- losing the window mid-hold would never deliver the release: drop the charge instead
 	UserInputService.WindowFocusReleased:Connect(function()
-		heldAt = nil
+		heldAt, holder = nil, nil
 	end)
 
 	-- the test hook: scenarios/human-bot.luau and the tours call this

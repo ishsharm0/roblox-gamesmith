@@ -29,9 +29,10 @@ assert(
 -- what the client would send, e.g. fire('"Act", 0.5')
 local function fire(args: string)
 	local s = Instance.new("LocalScript")
-	s.Source = ('game.ReplicatedStorage:WaitForChild("Action"):FireServer(%s) script:Destroy()'):format(args)
+	s.Source = ('game.ReplicatedStorage:WaitForChild("Action"):FireServer(%s)'):format(args)
 	s.Parent = p:WaitForChild("PlayerGui")
 	task.wait(0.35)
+	s:Destroy()
 end
 local function attr(name: string): number
 	return p:GetAttribute(name) :: number
