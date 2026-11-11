@@ -49,5 +49,9 @@ phase, rate-limits, computes the outcome and publishes it as player attributes p
 5. Retune numbers until the human bots show a gentle curve (`references/mechanics-and-fun.md`).
 6. Only then add what the starter lacks: tutorial, progression, shop (`references/monetization.md`), more screens.
 
+Known limits: the release amount is client-reported (the zone is public), bounded by the server's charge-time
+check; `Plays` merges by max across overlapping sessions; a round-end save happens at most every 30 s per
+player; in Studio the data is in memory only, so a playtest never touches a real save.
+
 Not in the starter on purpose: session locking across servers (`references/data.md`), a tutorial,
 settings, a pause menu, any monetization.

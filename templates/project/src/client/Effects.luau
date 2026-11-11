@@ -10,8 +10,8 @@ local TweenService = game:GetService("TweenService")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Mood = require(script.Parent.Mood)
 
-local CAMERA_POS = Vector3.new(0, 10, 25)
-local CAMERA_AIM = Vector3.new(0, 10, 0)
+local CAMERA_POS = Vector3.new(0, 11.5, 25)
+local CAMERA_AIM = Vector3.new(0, 11.5, 0)
 local EVENING: Mood.Look = {
 	clock = 17.8,
 	brightness = 2.2,
@@ -44,7 +44,7 @@ local function setOrb(orb: Part, on: boolean)
 		Color = Config.color(if on then "Orb" else "OrbIdle"),
 	})
 	if light then
-		tween(light, 0.2, { Brightness = if on then 2.5 else 0 })
+		tween(light, 0.2, { Brightness = if on then 1.2 else 0 })
 	end
 end
 

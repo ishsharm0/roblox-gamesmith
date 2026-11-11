@@ -85,7 +85,7 @@ function Arena.build()
 		orb.Size = Vector3.one * ORB_SIZE
 		orb:SetAttribute("BaseSize", ORB_SIZE)
 		local light = Instance.new("PointLight")
-		light.Range = 14
+		light.Range = 9
 		light.Brightness = 0
 		light.Color = Config.color("Orb")
 		light.Parent = orb

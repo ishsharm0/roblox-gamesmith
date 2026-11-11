@@ -220,8 +220,8 @@ function Hud.start(hooks: Hooks)
 	local grade = Kit.text(playing, {
 		Name = "Grade",
 		display = true,
-		TextSize = 64,
-		outline = 5,
+		TextSize = 52,
+		outline = 4,
 		TextTransparency = 1,
 		Size = UDim2.fromOffset(640, 84),
 		Position = UDim2.fromScale(0.5, 0.4),
