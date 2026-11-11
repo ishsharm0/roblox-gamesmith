@@ -280,6 +280,7 @@ def cmd_tour(a):
          click <path under PlayerGui>        a real mouse click, e.g. PondHUD.Root.Welcome.Begin
          client <one line of Luau>           run on the client (set a test-hook attribute, fire a remote)
          server <one line of Luau>           run on the server (force a state for a screen)
+         burst <seconds> <name>              film the viewport as captures (a few fps) into shots/; reliable
          record <seconds> <name>             (STUDIO_REMOTE) film the Studio window from here on, without
                                              pausing the tour; the MP4 lands in shots/ when the tour ends
        --device picks a Studio device-simulator device by name (landscape) for the whole tour."""
@@ -323,6 +324,11 @@ def cmd_tour(a):
                 r = studio("call", "user_mouse_input", args, check=False)
                 if r.returncode:
                     print("click failed:", rest, (r.stdout + r.stderr).strip()[:200])
+            elif cmd == "burst":   # blocks: the bot keeps playing in its own task meanwhile
+                secs, _, name = rest.partition(" ")
+                out = os.path.abspath(f"shots/tour-{tag}-{name or 'burst'}.mp4")
+                r = studio("burst", out, "--seconds", secs, check=False, timeout=int(float(secs)) + 120)
+                print((r.stdout + r.stderr).strip()[-300:])
             elif cmd == "record":
                 secs, _, name = rest.partition(" ")
                 out = os.path.abspath(f"shots/tour-{tag}-{name or 'film'}.mp4")

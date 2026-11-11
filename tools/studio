@@ -9,6 +9,8 @@
   studio schema <tool>                 one tool's full input schema
   studio state | play | stop | console
   studio open <place.rbxl|.rbxlx>      open a local place file in a new Studio window and wait for it
+  studio burst out.mp4 [--seconds 20]  a film made of viewport captures (a few fps) during a playtest: works
+                                       wherever Studio runs; use it for reviews of camera, HUD and pacing
   studio record out.mp4 [--seconds 20] [--title <text in the window title>]   (STUDIO_REMOTE only) film the
                                        Studio window on the PC with sound-free screen capture; start a
                                        playtest first. For watching game feel, pacing and trailers.
@@ -93,7 +95,8 @@ def remote_ps(script, timeout=120):
     r = subprocess.run(SSH + [REMOTE, "powershell -NoProfile -NonInteractive -EncodedCommand " + enc],
                        capture_output=True, text=True, timeout=timeout)
     if r.returncode:
-        raise SystemExit("remote PowerShell failed:\n" + r.stdout[-2000:])
+        err = "\n".join(l for l in r.stderr.splitlines() if "CLIXML" not in l and "<Objs" not in l)
+        raise SystemExit("remote PowerShell failed:\n" + r.stdout[-1500:] + err[-1500:])
     return r.stdout
 
 
@@ -118,43 +121,49 @@ schtasks /run /tn StudioRemoteOpen | Out-Null
 
 
 def remote_record(out, seconds, title):
+    tag = f"{os.getpid()}-{int(time.time())}"
     """Film the Studio window on the PC. The capture has to run on the signed-in desktop, so a small
     script is run by an interactive scheduled task: it finds the window, brings it forward, and lets
     ffmpeg film the screen (Desktop Duplication: a window grab comes out black for a GPU view). The MP4 is then copied back."""
     remote_ps(f'''
 $dir = "$env:USERPROFILE\\rbx-remote"
 New-Item -ItemType Directory -Force $dir | Out-Null
-schtasks /end /tn StudioRemoteRecord 2>$null | Out-Null   # a capture left hanging by an earlier run blocks the next
-Get-Process ffmpeg -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Remove-Item "$dir\\rec.mp4","$dir\\rec.log","$dir\\rec.done" -ErrorAction SilentlyContinue
+Remove-Item "$dir\\rec-{tag}.mp4","$dir\\rec-{tag}.log","$dir\\rec-{tag}.done" -ErrorAction SilentlyContinue
 $script = @"
 `$p = Get-Process RobloxStudioBeta | Where-Object {{ `$_.MainWindowTitle -like '*{title}*' }} | Select-Object -First 1
-if (-not `$p) {{ 'no Studio window with that title' | Set-Content '$dir\\rec.log'; 'x' | Set-Content '$dir\\rec.done'; exit }}
+if (-not `$p) {{ 'no Studio window with that title' | Set-Content '$dir\\rec-{tag}.log'; 'x' | Set-Content '$dir\\rec-{tag}.done'; exit }}
 Add-Type -Namespace W -Name U -MemberDefinition '[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] public static extern void keybd_event(byte k, byte s, uint f, UIntPtr e);'
 [W.U]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero); [W.U]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)
 [W.U]::ShowWindow(`$p.MainWindowHandle, 3) | Out-Null
 [W.U]::SetForegroundWindow(`$p.MainWindowHandle) | Out-Null
 Start-Sleep -Milliseconds 900
-& ffmpeg -y -hide_banner -loglevel error -f lavfi -i "ddagrab=framerate=30:output_idx=0,hwdownload,format=bgra" -t {seconds} -vf "scale=1280:-2" -c:v libx264 -preset veryfast -crf 24 -pix_fmt yuv420p '$dir\\rec.mp4' 2> '$dir\\rec.log'
-if (-not (Test-Path '$dir\\rec.mp4') -or (Get-Item '$dir\\rec.mp4').Length -lt 20000) {{
-  & ffmpeg -y -hide_banner -loglevel error -f gdigrab -framerate 30 -t {seconds} -i desktop -vf "scale=1280:-2" -c:v libx264 -preset veryfast -crf 24 -pix_fmt yuv420p '$dir\\rec.mp4' 2>> '$dir\\rec.log'
+& ffmpeg -y -hide_banner -loglevel error -f lavfi -i "ddagrab=framerate=30:output_idx=0,hwdownload,format=bgra" -t {seconds} -vf "scale=1280:-2" -c:v libx264 -preset veryfast -crf 24 -pix_fmt yuv420p '$dir\\rec-{tag}.mp4' 2> '$dir\\rec-{tag}.log'
+if (-not (Test-Path '$dir\\rec-{tag}.mp4') -or (Get-Item '$dir\\rec-{tag}.mp4').Length -lt 20000) {{
+  & ffmpeg -y -hide_banner -loglevel error -f gdigrab -framerate 30 -t {seconds} -i desktop -vf "scale=1280:-2" -c:v libx264 -preset veryfast -crf 24 -pix_fmt yuv420p '$dir\\rec-{tag}.mp4' 2>> '$dir\\rec-{tag}.log'
 }}
-'x' | Set-Content '$dir\\rec.done'
+'x' | Set-Content '$dir\\rec-{tag}.done'
 "@
-Set-Content -Path "$dir\\rec.ps1" -Value $script -Encoding UTF8
-Set-Content -Path "$dir\\rec.bat" -Encoding ASCII -Value "@echo off`r`npowershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$dir\\rec.ps1`""
-schtasks /create /tn StudioRemoteRecord /tr "$dir\\rec.bat" /sc once /st 00:00 /it /f | Out-Null
-schtasks /run /tn StudioRemoteRecord | Out-Null
+Set-Content -Path "$dir\\rec-{tag}.ps1" -Value $script -Encoding UTF8
+Set-Content -Path "$dir\\rec-{tag}.bat" -Encoding ASCII -Value "@echo off`r`npowershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$dir\\rec-{tag}.ps1`""
+schtasks /create /tn StudioRecord-{tag} /tr "$dir\\rec-{tag}.bat" /sc once /st 00:00 /it /f | Out-Null
+schtasks /run /tn StudioRecord-{tag} | Out-Null
 $t = 0
-while (-not (Test-Path "$dir\\rec.done") -and $t -lt {seconds + 60}) {{ Start-Sleep 1; $t++ }}
-if (Test-Path "$dir\\rec.log") {{ Get-Content "$dir\\rec.log" }}
+while (-not (Test-Path "$dir\\rec-{tag}.done") -and $t -lt {seconds + 60}) {{ Start-Sleep 1; $t++ }}
+if (Test-Path "$dir\\rec-{tag}.log") {{ Get-Content "$dir\\rec-{tag}.log" }}
+schtasks /delete /tn StudioRecord-{tag} /f | Out-Null
+Remove-Item "$dir\\rec-{tag}.ps1","$dir\\rec-{tag}.bat","$dir\\rec-{tag}.done","$dir\\rec-{tag}.log" -ErrorAction SilentlyContinue
+exit 0   # success is judged by the file that comes back, not by schtasks' exit codes
 ''', timeout=seconds + 120)
-    r = subprocess.run(["scp", "-q", "-o", "BatchMode=yes", f"{REMOTE}:rbx-remote/rec.mp4", out])
-    if r.returncode or not os.path.exists(out):
+    r = subprocess.run(["scp", "-q", "-o", "BatchMode=yes", f"{REMOTE}:rbx-remote/rec-{tag}.mp4", out])
+    if r.returncode or not os.path.exists(out) or os.path.getsize(out) < 20000:
         raise SystemExit("recording failed. Either no Studio window has that title, or the PC's desktop has no live "
                          "display: a signed-in but disconnected remote-desktop session cannot be filmed (stills "
-                         "still work). Someone must be signed in at the PC's own screen.")
+                         "still work). Run wake-pc (it attaches the session to the PC's screen) and record again.")
     print(f"recorded {seconds}s -> {os.path.abspath(out)}")
+
+
+def raise_(e):
+    raise e
 
 
 def hide_studio():
@@ -314,6 +323,28 @@ def main():
             if "datamodel_type" in schema.get("execute_luau", {}):
                 args["datamodel_type"] = ctx
             call("execute_luau", args)
+        elif cmd == "burst":
+            # A film made of viewport captures over one MCP session: works on any machine and any display state
+            # (unlike screen recording), shows the real camera, HUD and motion at a few frames a second.
+            import tempfile
+            out = next((x for x in a[1:] if x.endswith(".mp4")), None) or raise_(SystemExit("burst needs an out.mp4"))
+            secs = float(a[a.index("--seconds") + 1]) if "--seconds" in a else 20
+            tmp = tempfile.mkdtemp(prefix="burst-")
+            t0, n = time.time(), 0
+            while time.time() - t0 < secs:
+                r = m.req("tools/call", {"name": "screen_capture", "arguments": dict(
+                    {"capture_id": f"Burst_{int(time.time() * 1000)}"}, **({"studio_id": sid} if sid else {}))}, timeout=30)
+                img = next((c for c in r.get("content", []) if c.get("type") == "image"), None)
+                if img:
+                    n += 1
+                    open(os.path.join(tmp, f"f{n:05d}.jpg"), "wb").write(base64.b64decode(img["data"]))
+            if n < 3:
+                raise SystemExit("burst captured fewer than 3 frames")
+            fps = max(1.0, n / (time.time() - t0))
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-framerate", f"{fps:.2f}", "-i", os.path.join(tmp, "f%05d.jpg"),
+                            "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                            "-r", "30", out], check=True)
+            print(f"burst: {n} frames in {secs:.0f}s ({fps:.1f} fps) -> {os.path.abspath(out)}")
         elif cmd == "shot":
             out = next((x for x in a[1:] if x.endswith(".png")), "studio-shot.png")
             args = {"capture_id": "ScreenCapture_" + str(int(time.time() * 1000))}

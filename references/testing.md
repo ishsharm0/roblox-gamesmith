@@ -57,14 +57,20 @@ studio luau scenarios/leap-bot.luau --ctx Client  # during a play session you st
 - **Play sheet**: `rbxgame tour scenarios/play-tour.txt` runs a bot through a session and captures a frame every
   few seconds: the only capture that shows the real camera, HUD and feedback together. A game that owns its
   camera returns identical frames from `rbxgame shots --play`; use this instead.
-- **Play film** (Studio on a second machine, `STUDIO_REMOTE`): a tour step `record 30 gameplay` films the
+- **Play film**: a tour step `burst 30 gameplay` films the
   Studio window for 30 s while the bot keeps playing; the MP4 lands in `shots/`. Stills cannot show pacing,
   camera motion, feedback timing or animation; a film can. Watch it yourself as a contact sheet
   (`ffmpeg -i film.mp4 -vf fps=2,scale=480:-1,tile=6x5 film-sheet.jpg`) and, if you have a video-capable
   model to hand, have it review the film as a game: where a new player is lost, which actions land with
   no feedback, the longest stretch where nothing new happens. Treat its notes as a second opinion and
-  check each on a still. `studio record out.mp4 --seconds 20` films outside a tour.
+  check each on a still. `studio burst out.mp4 --seconds 20` films outside a tour. `record` (a real 30 fps screen recording) also exists but needs a live display on the Studio machine; prefer `burst`. At 3 fps a reviewer cannot see particles or short pops: check those on stills.
 - **Camera sheet**: `rbxgame shots` captures the cameras in `shots.json` for an art review.
+
+- **Physics games: a settle probe.** Before any bot fires, start a level, wait 5 s, and compare every
+  dynamic part's position with where it was built (server scenario: record `Position` at build, then
+  report the largest drift). Anything over a stud means the world moves on its own: stacks that slide,
+  balls that roll off, parts that sleep and then jitter. Fix those before tuning difficulty: the Topple
+  Toys build lost 20 minutes to balls rolling off towers that a bot was blamed for.
 
 ## What to test for every game
 

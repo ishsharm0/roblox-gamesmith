@@ -93,7 +93,7 @@ every look, feel and UI claim; rerun it after every pass. On it, check:
 - nothing sits over the play space for more than a moment (banners, toasts, panels);
 - water, sky and ground are not blown out to white or one flat colour.
 
-When Studio runs on a second machine, also film 30 seconds of play (`record 30 gameplay` in the tour,
+Also film 30 seconds of play (`burst 30 gameplay` in the tour,
 see `references/testing.md`) once the loop works and again before release: motion problems (a camera that
 jitters, a hit with no feedback, ten seconds where nothing happens) are invisible on a sheet of stills.
 

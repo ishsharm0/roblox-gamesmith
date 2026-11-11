@@ -115,6 +115,10 @@ platforms. Vary the rhythm: a long gap after two short ones, a drift pad after a
 
 ## Scoring and stars
 
+**Calibrate stars from bots, never from guesses.** Run the precise bot and the casual bot several times,
+then set the thresholds so a casual player earns 1 to 2 stars and a precise one 2 to 3. Cap every
+multiplier (combo, chain) and show the capped value: a "CHAIN x39" label on a x3 cap reads as a bug.
+
 Score the things that take skill (precision, streaks, risk, speed) and show it live. Stars: one for
 finishing, one for thoroughness (every collectible), one for mastery (a score or time a good player
 reaches on a good run). Calibrate with a bot: a perfect bot scored about 28k on the test course, so the
