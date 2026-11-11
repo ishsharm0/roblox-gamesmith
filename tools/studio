@@ -236,6 +236,8 @@ def main():
     if "--studio" in a:
         i = a.index("--studio"); want = a[i + 1]; del a[i:i + 2]
     cmd = a[0]
+    # read piped code before any ssh child starts: ssh would swallow our stdin and the script would run empty
+    piped = sys.stdin.read() if cmd == "luau" and len(a) > 1 and a[1] == "-" else None
     if cmd == "record":
         if not REMOTE:
             raise SystemExit("studio record needs STUDIO_REMOTE (it films the Studio window on that PC)")
@@ -307,7 +309,7 @@ def main():
             ctx = "Edit"
             if "--ctx" in a:
                 i = a.index("--ctx"); ctx = a[i + 1]; del a[i:i + 2]
-            src = sys.stdin.read() if a[1] == "-" else open(a[1]).read()
+            src = piped if piped is not None else open(a[1]).read()
             args = {"code": src}
             if "datamodel_type" in schema.get("execute_luau", {}):
                 args["datamodel_type"] = ctx
