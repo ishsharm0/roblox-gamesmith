@@ -24,8 +24,12 @@ SKILL = os.path.dirname(HERE)
 ENV = dict(os.environ, PATH=os.path.expanduser("~/.rokit/bin") + ":" + os.environ.get("PATH", ""))
 
 
-def sh(cmd, check=True, capture=False):
-    r = subprocess.run(cmd, env=ENV, text=True, capture_output=capture)
+def sh(cmd, check=True, capture=False, timeout=None):
+    try:
+        r = subprocess.run(cmd, env=ENV, text=True, capture_output=capture, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # a Studio call can hang (another window in Play stole focus, a frozen client); report and move on
+        r = subprocess.CompletedProcess(cmd, 124, "", f"timed out after {timeout}s: {' '.join(cmd[-3:])}")
     if check and r.returncode != 0:
         raise SystemExit((r.stdout or "") + (r.stderr or "") + f"\nfailed: {' '.join(cmd)}")
     return r
@@ -62,8 +66,8 @@ def nodes(tree, parts=()):
             yield from nodes(v, here)
 
 
-def studio(*args, check=True):
-    return sh([STUDIO, "--studio", os.path.basename(place_path(project())), *args], check=check, capture=True)
+def studio(*args, check=True, timeout=300):
+    return sh([STUDIO, "--studio", os.path.basename(place_path(project())), *args], check=check, capture=True, timeout=timeout)
 
 
 def studio_window_open(place):
@@ -307,7 +311,11 @@ def cmd_tour(a):
                 time.sleep(float(rest))
             elif cmd == "shot":
                 out = os.path.abspath(f"shots/tour-{tag}-{len(shots) + 1:02d}-{rest}.png")
-                studio("shot", out); shots.append(out); print("shot", rest)
+                r = studio("shot", out, check=False, timeout=120)
+                if r.returncode:
+                    print("shot failed:", rest, (r.stdout + r.stderr).strip()[-200:])
+                else:
+                    shots.append(out); print("shot", rest)
             elif cmd == "click":
                 args = json.dumps({"datamodel_type": "Client", "actions": [
                     {"action": "moveTo", "instance_path": "LocalPlayer.PlayerGui." + rest},

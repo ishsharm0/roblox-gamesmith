@@ -233,7 +233,7 @@ def main():
     if not a or a[0] in ("-h", "--help"):
         print(__doc__); return
     want = None
-    if "--studio" in a:
+    if "--studio" in a:   # accepted anywhere on the line
         i = a.index("--studio"); want = a[i + 1]; del a[i:i + 2]
     cmd = a[0]
     # read piped code before any ssh child starts: ssh would swallow our stdin and the script would run empty
