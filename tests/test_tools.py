@@ -30,8 +30,17 @@ class StudioSelectionTests(unittest.TestCase):
         driver = load('rbxgame')
         results = [subprocess.CompletedProcess([], 1, '', ''),
                    subprocess.CompletedProcess([], 0, '{"studios":[{"id":"safe-window","name":"QualityValidation.rbxlx"}]}', '')]
-        with patch.object(driver.subprocess, 'run', side_effect=results):
+        with patch.dict(driver.os.environ, {'STUDIO_REMOTE': ''}), \
+             patch.object(driver.subprocess, 'run', side_effect=results):
             self.assertEqual(driver.studio_window_open('/tmp/QualityValidation.rbxlx'), ['safe-window'])
+
+    def test_remote_studio_skips_the_local_process_check(self):
+        driver = load('rbxgame')
+        listing = subprocess.CompletedProcess([], 0, '{"studios":[{"id":"pc-window","name":"Game.rbxlx"}]}', '')
+        with patch.dict(driver.os.environ, {'STUDIO_REMOTE': 'user@pc'}), \
+             patch.object(driver.subprocess, 'run', side_effect=[listing]) as run:
+            self.assertEqual(driver.studio_window_open('/tmp/Game.rbxlx'), ['pc-window'])
+            self.assertEqual(run.call_count, 1)
 
     def test_explicit_unknown_window_never_falls_back(self):
         studio = load('studio')

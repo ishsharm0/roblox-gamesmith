@@ -67,14 +67,16 @@ def studio(*args, check=True):
 
 
 def studio_window_open(place):
-    r = subprocess.run(["pgrep", "-f", f"localPlaceFile {place}"], capture_output=True, text=True)
-    pids = [int(x) for x in r.stdout.split()]
+    pids = []
+    if not os.environ.get("STUDIO_REMOTE"):   # with a remote Studio only its own listing counts
+        r = subprocess.run(["pgrep", "-f", f"localPlaceFile {place}"], capture_output=True, text=True)
+        pids = [int(x) for x in r.stdout.split()]
     if pids:
         return pids
     # Updated launchers can consume/change their launch arguments. Ask MCP before
     # concluding the window is closed; otherwise open/save can duplicate a window
     # or silently skip exporting the existing project's world.
-    listed = subprocess.run([sys.executable, STUDIO, "list"], capture_output=True, text=True, timeout=30)
+    listed = subprocess.run([sys.executable, STUDIO, "list"], capture_output=True, text=True, timeout=60)
     if listed.returncode:
         raise SystemExit("Cannot safely determine open Studio windows; no new window was launched.")
     try:

@@ -82,7 +82,10 @@ and why); the docs give the facts. When they disagree on a fact, the docs win: f
   exact inputs before changing the game. Bots and scenarios have bugs too.
 - **Be a quiet guest on the person's computer.** Studio opens hidden (`rbxgame open`, `studio open`)
   and one window per project is reused. No full-desktop screenshots. Blender runs headless and only
-  when the person wants meshes from it.
+  when the person wants meshes from it. If they have a second machine, put Studio there: with
+  `STUDIO_REMOTE=user@host` set (a Windows PC over SSH, signed in to Studio, MCP server on) every
+  `studio` and `rbxgame` command, playtests and captures included, runs on that machine and nothing
+  opens here.
 - **Built or licensed art, not generated.** Parts, terrain, Blender meshes, CC0 kits and vetted
   Creator Store assets. Studio's `generate_*` tools and AI images stay off unless the person asks for
   them by name.

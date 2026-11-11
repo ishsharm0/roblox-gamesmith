@@ -16,6 +16,11 @@ Studio must be running with a place open and "Enable Studio as MCP server" on (A
 Manage MCP Servers). With several Studio windows open, pass --studio <id or name> to make that one
 active; otherwise Studio's active one is used. Every call starts StudioMCP over stdio, so no Claude Code restart is
 needed after Studio starts.
+
+Studio on another machine: set STUDIO_REMOTE=user@host (a Windows PC reachable over SSH with key auth,
+signed in to Studio, MCP server enabled there). Every command then drives that Studio instead of a local
+one; `studio open` copies the place file over and opens it on that machine's desktop. Use it to keep
+playtests off the computer someone is working on.
 """
 import base64, json, os, subprocess, sys, time, selectors
 from pathlib import Path
@@ -23,12 +28,15 @@ from pathlib import Path
 BIN = "/Applications/RobloxStudio.app/Contents/MacOS/StudioMCP"
 APP = "/Applications/RobloxStudio.app/Contents/MacOS/RobloxStudio"
 B64 = Path(__file__).resolve().parent.joinpath("luau", "b64.luau").read_text()
+REMOTE = os.environ.get("STUDIO_REMOTE", "").strip()
+SSH = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=20"]
 CHUNK = 60_000   # characters of base64 per execute_luau round trip (its text result is cut at ~100k)
 
 
 class MCP:
     def __init__(self):
-        self.p = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        cmd = SSH + [REMOTE, 'cmd /c "%LOCALAPPDATA%\\Roblox\\mcp.bat"'] if REMOTE else [BIN]
+        self.p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                   stderr=subprocess.DEVNULL, bufsize=0)
         self.n = 0
         self.req("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
@@ -70,7 +78,39 @@ class MCP:
             pass
 
 
+def remote_ps(script, timeout=120):
+    """Run a PowerShell script on the remote PC (EncodedCommand avoids every quoting layer)."""
+    enc = base64.b64encode(script.encode("utf-16le")).decode()
+    r = subprocess.run(SSH + [REMOTE, "powershell -NoProfile -NonInteractive -EncodedCommand " + enc],
+                       capture_output=True, text=True, timeout=timeout)
+    if r.returncode:
+        raise SystemExit("remote PowerShell failed:\n" + r.stdout[-2000:])
+    return r.stdout
+
+
+def remote_open(place):
+    """Copy the place to the PC and open it in Studio on the signed-in desktop. A process started
+    straight from SSH has no desktop, so an interactive scheduled task does the launch."""
+    name = os.path.basename(place)
+    remote_ps('New-Item -ItemType Directory -Force "$env:USERPROFILE\\rbx-remote" | Out-Null')
+    subprocess.run(["scp", "-q", "-o", "BatchMode=yes", place, f"{REMOTE}:rbx-remote/{name}"], check=True)
+    remote_ps(f'''
+$dir = "$env:USERPROFILE\\rbx-remote"
+$exe = (Get-Process RobloxStudioBeta -ErrorAction SilentlyContinue | Select-Object -First 1).Path
+if (-not $exe) {{
+  $content = (Get-ItemProperty "HKCU:\\Software\\Roblox\\RobloxStudio").ContentFolder
+  $exe = Join-Path (Split-Path $content -Parent) "RobloxStudioBeta.exe"
+}}
+if (-not (Test-Path $exe)) {{ Write-Output "Studio is not installed"; exit 1 }}
+Set-Content -Path "$dir\\open.bat" -Encoding ASCII -Value "@echo off`r`nstart `"`" `"$exe`" -task EditFile -localPlaceFile `"$dir\\{name}`""
+schtasks /create /tn StudioRemoteOpen /tr "$dir\\open.bat" /sc once /st 00:00 /it /f | Out-Null
+schtasks /run /tn StudioRemoteOpen | Out-Null
+''')
+
+
 def hide_studio():
+    if REMOTE:
+        return
     subprocess.run(["osascript", "-e", 'tell application "System Events" to set visible of '
                     '(every process whose name contains "RobloxStudio") to false'],
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -89,24 +129,31 @@ def studios(m, wait=12):
 
 
 def pick_studio(m, want):
-    txt = studios(m)
-    try:
-        data = json.loads(txt)
-    except ValueError:
-        data = None
-    items = []
-    if isinstance(data, dict):
-        data = data.get("studios") or data.get("instances") or list(data.values())[0]
-    if isinstance(data, list):
-        items = data
-    if not items:
-        raise SystemExit("no Studio connected:\n" + txt)
     def sid(it):
         return str(it.get("studio_id") or it.get("id") or it.get("instance_id") or it.get("studioId"))
-    if want:
+    def listing():
+        txt = studios(m)
+        try:
+            data = json.loads(txt)
+        except ValueError:
+            data = None
+        if isinstance(data, dict):
+            data = data.get("studios") or data.get("instances") or list(data.values())[0]
+        return txt, (data if isinstance(data, list) else [])
+    # Windows register one by one over a few seconds, so the wanted one can be missing from the
+    # first listing even though it is open. Ask again before refusing.
+    t0 = time.time()
+    while True:
+        txt, items = listing()
+        if not want or time.time() - t0 > 15:
+            break
         for it in items:
             if want in (sid(it), str(it.get("name")), str(it.get("place_id") or it.get("placeId"))):
                 return sid(it)
+        time.sleep(1.5)
+    if not items:
+        raise SystemExit("no Studio connected:\n" + txt)
+    if want:
         raise SystemExit(f"Studio {want!r} is not connected; refusing to select another window.\n" + txt)
     if len(items) > 1:   # several windows (the start page counts): take the first with a place open
         for it in items:
@@ -144,8 +191,11 @@ def main():
         place = os.path.abspath(a[1])
         # -g: don't bring Studio to the front; -j: launch hidden. The person is using this Mac, so Studio
         # must never pop over their windows; it is hidden again once it reports the place open.
-        subprocess.run(["open", "-g", "-j", "-n", "/Applications/RobloxStudio.app", "--args",
-                        "-task", "EditFile", "-localPlaceFile", place], check=True)
+        if REMOTE:
+            remote_open(place)
+        else:
+            subprocess.run(["open", "-g", "-j", "-n", "/Applications/RobloxStudio.app", "--args",
+                            "-task", "EditFile", "-localPlaceFile", place], check=True)
         t0 = time.time()
         while time.time() - t0 < 180:
             time.sleep(5)
