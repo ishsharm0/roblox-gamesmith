@@ -91,3 +91,7 @@ marked **(verified)** were hit and fixed while building Lily Pad Leap (`referenc
   a scripted camera or an aim raycast can find nil where the server sees a part. For an arena under
   about 1,000 studs across, set `"StreamingEnabled": false` in `default.project.json`, or `WaitForChild`
   and `Player:RequestStreamAroundAsync` before reading far instances. (Found in the Topple Toys cold build.)
+- **Captures while another Studio window is playing.** With two Studio windows on one machine, a
+  `screen_capture` of one window hangs while the other is in Play (seen repeatedly on 2026-11-11/12:
+  every shot of a tour timed out). Run playtests and tours for one project at a time per machine; tours
+  now time each shot out after 120 s instead of waiting forever.
