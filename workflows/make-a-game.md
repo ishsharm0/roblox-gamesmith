@@ -87,6 +87,8 @@ Fill in `scenarios/play-tour.txt` (it starts a session, runs your bot and captur
 seconds) and run `rbxgame tour scenarios/play-tour.txt`. This sheet is the game as the player sees it:
 the real camera, the HUD, the feedback, each zone in order. From here on it is the main evidence for
 every look, feel and UI claim; rerun it after every pass. On it, check:
+- the player's own character never covers the target or the play space (in an aiming game with a fixed
+  camera, offset the camera, hide the avatar, or show only the hands and the held object);
 - the next thing to do is the most visible thing in each frame (if you have to hunt for the target, add
   a beacon, a glow or contrast until you don't);
 - the frames from different zones could not be mistaken for each other;
