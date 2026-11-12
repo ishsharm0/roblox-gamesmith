@@ -7,6 +7,14 @@ marked **(verified)** were hit and fixed while building Lily Pad Leap (`referenc
 - **Reflective terrain water goes white.** With a low gameplay camera, `WaterReflectance` above about 0.05
   mirrors the sky and the pond becomes a pale sheet that hides everything floating on it. Keep it near 0.03
   and get the colour from `WaterColor`.
+- **A low sun over a pond is mud.** At ClockTime 17+ with hills around the water, their shadows cover the
+  whole surface and a warm grade turns the water brown. For "golden hour" over water stay near 16 and keep
+  the water itself turquoise.
+- **Clear water over pale sand washes out.** Open water with nothing around it and `WaterTransparency` above
+  about 0.25 reads white-mint, and pale pads vanish on it. Keep open water deeper in colour (0.15-0.22).
+- **A chase camera needs a latch.** "Follow the ball while it is fast and far from the target" comes true
+  again when the ball flies out the far side, and the camera dives under the table. Chase only until the
+  first arrival, then stay on the wide shot for the rest of the shot.
 - **ClockTime past about 18 is night**, not dusk, and a Sky with fixed textures ignores the time of day. For
   sunset and dusk stay at 17.3-17.7 and do the colour with ColorCorrection tint and Atmosphere.
 
@@ -66,6 +74,11 @@ marked **(verified)** were hit and fixed while building Lily Pad Leap (`referenc
 | Clicks go through a modal to the world | nothing sinks input | full-screen transparent button behind modals |
 | Gamepad can't reach a button | `Selectable` false or no `SelectedObject` | set selection when a screen opens |
 | UI shows a stale count ("17 dewdrops" for 23) **(verified)** | a number typed into UI text | compute every count and threshold shown in UI from config or layout data |
+| A full-width panel is cut off on small screens **(verified)** | the global UIScale had a floor (0.6) above what the screen needs | floor no higher than 0.45; check a 568x320 viewport |
+| A world sign prints over the HUD title **(verified)** | a BillboardGui on a gate or arch sits at top centre when you face it | no world label where the HUD already says it; `MaxDistance` under 30 for the rest |
+| A collapse shows a pile of unreadable "+30"s **(verified)** | one popup per scored object | merge scores that land within about 0.25 s into one popup with the total |
+| Popups rise into a fixed HUD label **(verified)** | world-anchored popups clamp only to the screen edge | clamp their start below the label's zone, and keep the rise short |
+| A level banner names the previous level **(verified)** | it read attributes when `Phase` changed, before the new level's attributes arrived | update the banner from each attribute's own changed signal |
 | A tour stalls on a phone screen **(verified)** | Studio's simulated taps can miss on the device simulator | after a click step, fire the same remote as a fallback (ignored if the click worked) |
 
 ## Studio and tooling
