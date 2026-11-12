@@ -350,7 +350,15 @@ def cmd_tour(a):
             luau("game:GetService('StudioDeviceSimulatorService'):StopSimulationAsync() return 'ok'")
     if shots:
         sheet(shots, f"shots/tour-{tag}-sheet.jpg")
-        print(f"{len(shots)} screens -> {os.path.abspath(f'shots/tour-{tag}-sheet.jpg')}")
+        out = os.path.abspath(f"shots/tour-{tag}-sheet.jpg")
+        print(f"{len(shots)} screens -> {out}")
+        # RBXGAME_SHEET_HOOK: a command that reviews every new sheet (e.g. a vision-model checker); its
+        # output is printed under the tour so the review happens every time, not only when remembered
+        hook = os.environ.get("RBXGAME_SHEET_HOOK")
+        if hook:
+            kind = "ui" if "ui" in os.path.basename(a[0]) else "game"
+            print(f"\n== sheet review ({kind}): fix every P0, then recapture", flush=True)
+            subprocess.run([*hook.split(), out, "--kind", kind])
 
 
 def cmd_doctor(a):

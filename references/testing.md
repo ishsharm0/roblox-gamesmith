@@ -64,6 +64,9 @@ studio luau scenarios/leap-bot.luau --ctx Client  # during a play session you st
   model to hand, have it review the film as a game: where a new player is lost, which actions land with
   no feedback, the longest stretch where nothing new happens. Treat its notes as a second opinion and
   check each on a still. `studio burst out.mp4 --seconds 20` films outside a tour. `record` (a real 30 fps screen recording) also exists but needs a live display on the Studio machine; prefer `burst`. At 3 fps a reviewer cannot see particles or short pops: check those on stills.
+- **Automatic sheet review**: set `RBXGAME_SHEET_HOOK` to a command that takes an image path and
+  `--kind game|ui` (for example a script that asks a strong vision model for defects) and every tour prints
+  that review under its sheet.
 - **Camera sheet**: `rbxgame shots` captures the cameras in `shots.json` for an art review.
 
 - **Physics games: a settle probe.** Before any bot fires, start a level, wait 5 s, and compare every
