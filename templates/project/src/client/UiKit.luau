@@ -108,7 +108,9 @@ function Kit.screen(
 		if size.X < 1 then
 			return
 		end
-		local s = math.clamp(math.min(size.X / T.Ref.X, size.Y / T.Ref.Y), 0.6, 1.35)
+		-- floor 0.45: at 0.6 a full-width panel (860 of the 1100 reference) overflows screens under 660 px,
+		-- which includes small phones in landscape
+		local s = math.clamp(math.min(size.X / T.Ref.X, size.Y / T.Ref.Y), 0.45, 1.35)
 		scale.Scale = s
 		root.Size = UDim2.fromOffset(size.X / s, size.Y / s)
 	end
