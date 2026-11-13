@@ -23,7 +23,7 @@ made on purpose, it is fun within 30 seconds, it is a skill to get better at, an
 
 1. `rbxgame doctor`. Fix anything marked MISS before building. If Studio isn't connected, ask the
    person to open Studio and turn on "Enable Studio as MCP server".
-2. New game: read `references/creative-quality.md` and `workflows/make-a-game.md` before the first file. It sets the order and the bar. `rbxgame new` scaffolds a playable starter game: edit it, don't rewrite it (`templates/project/STARTER.md`).
+2. New game: pass `references/concept-gate.md` in writing first (two polished games were rejected as unoriginal and thin; the idea was wrong before the first file). Then read `references/creative-quality.md` and `workflows/make-a-game.md` before the first file. It sets the order and the bar. `rbxgame new` scaffolds a playable starter game: edit it, don't rewrite it (`templates/project/STARTER.md`).
 3. Existing game or a single task: find it in **Routing** below and read that file first.
 4. Unsure how something is done: `references/reference-game.md` shows the patterns a tested game used.
 
@@ -101,6 +101,7 @@ and why); the docs give the facts. When they disagree on a fact, the docs win: f
 | Task | Read |
 |---|---|
 | Make a game, any genre | `workflows/make-a-game.md`, then `templates/genres.md` and `references/game-design.md` |
+| Choosing or judging a concept: originality, social stake, depth, difficulty targets | `references/concept-gate.md` |
 | Research ideas, comparable games, trends | `references/research.md` |
 | The core mechanic, difficulty curve, scoring, stakes, fairness, bot playtests | `references/mechanics-and-fun.md` |
 | First session, onboarding, the flow from arrival to "one more go" | `references/player-journey.md` |
