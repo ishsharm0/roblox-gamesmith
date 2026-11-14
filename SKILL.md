@@ -102,6 +102,7 @@ and why); the docs give the facts. When they disagree on a fact, the docs win: f
 |---|---|
 | Make a game, any genre | `workflows/make-a-game.md`, then `templates/genres.md` and `references/game-design.md` |
 | Choosing or judging a concept: originality, social stake, depth, difficulty targets | `references/concept-gate.md` |
+| Ideation procedure with saturation and tension tests, lean brief, art bible with design tests, Blender review discipline | `references/creative-methods.md` |
 | Generating ideas, compulsion loops with formulas, 40 design rules, juice checklist with numbers | `references/fun-and-juice.md` |
 | Research ideas, comparable games, trends | `references/research.md` |
 | The core mechanic, difficulty curve, scoring, stakes, fairness, bot playtests | `references/mechanics-and-fun.md` |
@@ -121,6 +122,7 @@ and why); the docs give the facts. When they disagree on a fact, the docs win: f
 | Original concepts, audience appeal, pacing and creative review | `references/creative-quality.md` |
 | Models, meshes, textures, Creator Store, Blender | `references/assets-pipeline.md`, `references/blender-pipeline.md`, `references/open-cloud.md` |
 | Tested Blender Python kit: stylised props, rigs, animation, renders, CC0 assets and export | `references/blender-kit.md` |
+| Which open-source Luau modules to vendor (Trove, ProfileStore, TopbarPlus) and which to skip | `references/open-modules.md` |
 | Saving player data | `references/data.md` |
 | Shops, passes, products, receipts | `references/monetization.md`, `references/receipts.md` |
 | Retention, live ops, store page, analytics | `references/retention-liveops.md` |

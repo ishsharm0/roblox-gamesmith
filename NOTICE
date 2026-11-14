@@ -3,6 +3,13 @@ Third-party material in this repository
 docs/images/*: screenshots of Lily Pad Leap, a game built with this skill. Its trees, bushes, rocks
   and flowers are Kenney's Nature Kit (CC0 1.0, https://kenney.nl/assets/nature-kit).
 
+references/creative-methods.md adapts ideas, in new words, from:
+  creative-director-skill by Serge Shima (CC-BY-4.0, https://github.com/smixs/creative-director-skill),
+  Claude-Code-Game-Studios by Donchitos (MIT, https://github.com/Donchitos/Claude-Code-Game-Studios),
+  blender-kiln by elithril (MIT, https://github.com/elithril/blender-kiln).
+references/open-modules.md lists third-party Luau modules (Trove, ProfileStore, TopbarPlus); their
+  licences apply to any copy you vendor into a game.
+
 Downloaded at runtime, not included:
   tools/rbxdocs clones Roblox's creator documentation (https://github.com/Roblox/creator-docs),
   licensed CC-BY-4.0 by Roblox Corporation, into ~/.cache/roblox-gamesmith on your machine.
