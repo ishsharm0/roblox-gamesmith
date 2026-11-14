@@ -222,6 +222,22 @@ def pick_studio(m, want):
     return sid(items[0])
 
 
+def call_with_transport_retry(m, name, args):
+    """Retry only requests explicitly reported as undelivered to a DataModel.
+
+    A newly attached MCP connection can list a Play client before its route registers.
+    Keep that connection alive for registration. Never retry game errors or ambiguous timeouts.
+    """
+    for attempt in range(3):
+        result = m.req("tools/call", {"name": name, "arguments": args})
+        body = " ".join(c.get("text", "") for c in result.get("content", []))
+        undelivered = (result.get("isError") and "Target is not reachable" in body
+                       and "No OnInvoke handler responded" in body)
+        if not undelivered or attempt == 2:
+            return result
+        time.sleep(2 * (attempt + 1))
+
+
 def show(result, out=None):
     k = 0
     for c in result.get("content", []):
@@ -311,7 +327,7 @@ def main():
             args = dict(args)
             if sid and "studio_id" in schema.get(name, {}):   # newer Studio builds want it on every call
                 args["studio_id"] = sid
-            show(m.req("tools/call", {"name": name, "arguments": args}), out)
+            show(call_with_transport_retry(m, name, args), out)
         if cmd == "call":
             call(a[1], json.loads(a[2]) if len(a) > 2 else {})
         elif cmd == "luau":
