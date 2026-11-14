@@ -1,13 +1,13 @@
 # Blender to Roblox
 
 Five rules:
-1. Blender runs only when the person wants meshes from it, and then headless only
-   (`/Applications/Blender.app/Contents/MacOS/Blender -b --python <script>.py -- args`), never the
-   GUI: the person is using their Mac.
-2. Every script ends through `rbxblend.finish()` (`os._exit`) after writing its files. Blender 5.0.1
-   double-frees mesh data in its exit teardown, and every crash puts a "Blender quit unexpectedly"
-   alert on the person's screen. Run one script once and check it exits cleanly before running it in
-   a loop. Ask the person before the first Blender run in a session.
+1. Blender runs headless on the authorized remote renderer, never on the person's Mac. Use
+   `blender-pc info`, then `blender-pc run scene.py --out output`. Run one job at a time and leave
+   existing Studio sessions and other processes alone.
+2. Prefer the tested **bkit** package in `blender/bkit/`. Read [blender-kit.md](blender-kit.md)
+   for its API, calibrated settings and eight executed examples. The launcher copies the package
+   alongside each script. End with `bkit.finish()` after writing files: it flushes output and uses
+   `os._exit` to avoid crash-prone Blender teardown. Verify expected artifacts, not just launcher exit.
 3. Parts first. Most stylised Roblox worlds are built from Parts, WedgeParts, cylinders and unions,
    and they need no upload at all. Reach for Blender when a silhouette can't be built from primitives
    (organic trees, rocks, characters, curved props).
@@ -25,8 +25,8 @@ Five rules:
 | `preview.py -- <in> <out.png>` | a turntable contact sheet rendered headless, to judge the asset by eye |
 | `to_luau_mesh.py -- <out.luau> <in>` | mesh data as a ModuleScript, for the runtime EditableMesh route |
 
-These were written in the first build session and have not run since the crash-safe exit was added.
-Test one with the person's OK before relying on them.
+These legacy scripts have not been revalidated on the current remote Blender build. Prefer bkit;
+its GLB/FBX/OBJ exports have been exercised and re-imported in Blender (not certified in Studio).
 
 ## Getting a mesh into a place
 

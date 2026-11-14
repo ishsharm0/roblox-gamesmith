@@ -119,6 +119,7 @@ and why); the docs give the facts. When they disagree on a fact, the docs win: f
 | Procedural geometry, model quality, proportions and construction | `references/geometry-quality.md` |
 | Original concepts, audience appeal, pacing and creative review | `references/creative-quality.md` |
 | Models, meshes, textures, Creator Store, Blender | `references/assets-pipeline.md`, `references/blender-pipeline.md`, `references/open-cloud.md` |
+| Tested Blender Python kit: stylised props, rigs, animation, renders, CC0 assets and export | `references/blender-kit.md` |
 | Saving player data | `references/data.md` |
 | Shops, passes, products, receipts | `references/monetization.md`, `references/receipts.md` |
 | Retention, live ops, store page, analytics | `references/retention-liveops.md` |
