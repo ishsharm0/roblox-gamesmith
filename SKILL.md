@@ -23,7 +23,7 @@ made on purpose, it is fun within 30 seconds, it is a skill to get better at, an
 
 1. `rbxgame doctor`. Fix anything marked MISS before building. If Studio isn't connected, ask the
    person to open Studio and turn on "Enable Studio as MCP server".
-2. New game: pass `references/concept-gate.md` in writing first (two polished games were rejected as unoriginal and thin; the idea was wrong before the first file). Then run the ideation procedure in `references/fun-and-juice.md` (25 one-line concepts, score, keep one; four layers: feel, a skill beat or real decision, a growing number, a stake with other players) and apply its juice checklist with numbers to the core action before any content. Then read `references/creative-quality.md` and `workflows/make-a-game.md` before the first file. It sets the order and the bar. `rbxgame new` scaffolds a playable starter game: edit it, don't rewrite it (`templates/project/STARTER.md`).
+2. New game: pass `references/concept-gate.md` in writing first (two polished games were rejected as unoriginal and thin; the idea was wrong before the first file). Then run the ideation procedure in `references/fun-and-juice.md` (25 one-line concepts, score, keep one; four layers: feel, a skill beat or real decision, a growing number, a stake with other players) and apply its juice checklist with numbers to the core action before any content. Before any art or UI, write STYLE.md with the one-hour style-bible procedure in `references/visual-craft.md` (three keywords, palette with one sacred colour, shape rule, lighting recipe, motion rule, a signature motif shared by world, UI and icon) and apply its ordered rules for 3D, motion and UI. Then read `references/creative-quality.md` and `workflows/make-a-game.md` before the first file. It sets the order and the bar. `rbxgame new` scaffolds a playable starter game: edit it, don't rewrite it (`templates/project/STARTER.md`).
 3. Existing game or a single task: find it in **Routing** below and read that file first.
 4. Unsure how something is done: `references/reference-game.md` shows the patterns a tested game used.
 
@@ -104,6 +104,7 @@ and why); the docs give the facts. When they disagree on a fact, the docs win: f
 | Choosing or judging a concept: originality, social stake, depth, difficulty targets | `references/concept-gate.md` |
 | Ideation procedure with saturation and tension tests, lean brief, art bible with design tests, Blender review discipline | `references/creative-methods.md` |
 | Generating ideas, compulsion loops with formulas, 40 design rules, juice checklist with numbers | `references/fun-and-juice.md` |
+| Making 3D, animation and UI look expensive: shape, value and colour rules, spring and timing numbers, reward choreography, 2026 Roblox UI features (UIShadow, per-corner radius, StyleSheets), style bible | `references/visual-craft.md` |
 | Research ideas, comparable games, trends | `references/research.md` |
 | The core mechanic, difficulty curve, scoring, stakes, fairness, bot playtests | `references/mechanics-and-fun.md` |
 | First session, onboarding, the flow from arrival to "one more go" | `references/player-journey.md` |
