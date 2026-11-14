@@ -6,17 +6,22 @@ from the project template; it already does most of this.
 
 ## One reference size, one scale
 
-Lay everything out in offset pixels on a fixed reference canvas (the kit uses 1100x620), then scale
+Lay everything out in offset pixels on a fixed reference canvas (the kit uses 844x390), then scale
 the whole root with one `UIScale`:
 
 ```lua
 local function fit()
 	local v = workspace.CurrentCamera.ViewportSize
-	scale.Scale = math.clamp(math.min(v.X / 1100, v.Y / 620), 0.6, 1.35)
+	scale.Scale = math.clamp(math.min(v.X / 844, v.Y / 390), 1, 2)
+	root.Size = UDim2.fromOffset(v.X / scale.Scale, v.Y / scale.Scale)
 end
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(fit)
 fit()
 ```
+
+On a smaller viewport, keep scale 1 and fit/scroll/reflow the content. This preserves the 16px text
+and 48px target floors. When deriving grid columns from AbsoluteSize, divide by the root UIScale
+before comparing with authored card widths. Old fixed 1100-wide screens need a layout migration.
 
 This beats a mix of scale and offset sizes: proportions stay as designed, text grows with its boxes,
 and there is one number to reason about. Use `Scale` sizing only for full-screen layers (dimmers,
@@ -57,8 +62,8 @@ backdrops).
 
 - Buttons are `TextButton` / `ImageButton` with `Activated` (works for mouse, touch and gamepad), not
   `MouseButton1Click`.
-- Touch targets at least 44 px on the device after scaling: on a phone at UIScale 0.6, that is 74 px
-  on the reference canvas.
+- Touch targets at least 48x48 px after scaling. UiKit v2 keeps small screens at scale 1; reflow
+  instead of shrinking the target. Text is at least 16px.
 - Gamepad: set `Selectable` on buttons, `GuiService.SelectedObject` when a modal opens, and make sure
   every screen can be left with B.
 - `UserInputService.PreferredInput` (Touch / Gamepad / KeyboardAndMouse) to swap prompts ("Space" vs
@@ -79,8 +84,8 @@ backdrops).
 
 ## Motion
 
-- Tween `Size` / `Position` / `Transparency` with `TweenService`; a 0.18-0.3 s Back-out pop on
-  open, 0.12 s on close. Respect a reduced-motion setting by skipping straight to the end state.
+- Tween `Size` / `Position` / `Transparency` with `TweenService`; a .28s Back-out pop from .88 to 1 on
+  open; the kit hides immediately on close. Button press is .06s down / .15s release. Respect a reduced-motion setting by skipping straight to the end state.
 - Don't tween `TextSize` (it re-rasterises every step); scale a `UIScale` instead.
 - Number counters: tween a NumberValue and write `math.floor(v)` on `Changed`.
 

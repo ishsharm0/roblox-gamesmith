@@ -1,15 +1,9 @@
 --!strict
--- The game's UI kit: one theme, one set of components, one motion language.
--- Every screen is built from these so the whole game reads as one designed thing:
--- cream panels with an ink outline and a drop shadow, chunky buttons with a lip that
--- presses down, drawn icons (no uploaded images), pills for numbers, a switch for settings.
--- Layout is authored at a 1100x620 reference and scaled by one UIScale per screen, so a
--- phone in landscape (about 844x390) keeps 44-point touch targets and nothing overflows.
+-- Phone-first toy UI. Generic components; call configureIcons with a public asset map.
+-- Author at 844x390. On narrower viewports the canvas reflows at scale 1, preserving 16px text / 48px taps.
 local GuiService = game:GetService("GuiService")
 local TweenService = game:GetService("TweenService")
-
 local Kit = {}
-
 Kit.Theme = {
 	Ink = Color3.fromRGB(16, 52, 64),
 	InkSoft = Color3.fromRGB(44, 92, 104),
@@ -24,20 +18,27 @@ Kit.Theme = {
 	Sun = Color3.fromRGB(255, 200, 70),
 	SunShade = Color3.fromRGB(214, 140, 30),
 	Muted = Color3.fromRGB(196, 202, 186),
+	Common = Color3.fromRGB(184, 192, 200),
+	Uncommon = Color3.fromRGB(111, 209, 107),
+	Rare = Color3.fromRGB(77, 163, 255),
+	Epic = Color3.fromRGB(168, 107, 255),
+	Legendary = Color3.fromRGB(255, 200, 70),
 	Display = Font.new("rbxasset://fonts/families/FredokaOne.json"),
 	Body = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.Bold),
 	BodyHeavy = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.ExtraBold),
-	Radius = 18,
+	Radius = 20,
 	Stroke = 3,
 	Lip = 6,
-	Ref = Vector2.new(1100, 620),
+	Ref = Vector2.new(844, 390),
 }
 local T = Kit.Theme
-
 Kit.reducedMotion = false
 Kit.onClick = nil :: (() -> ())?
-
-local function make(class: string, props: { [string]: any }, children: { Instance }?): any
+local icons: { [string]: string } = {}
+function Kit.configureIcons(map: { [string]: string })
+	icons = table.clone(map)
+end
+function Kit.make(class: string, props: { [string]: any }, children: { Instance }?): any
 	local inst = Instance.new(class)
 	for k, v in props do
 		if k ~= "Parent" then
@@ -47,26 +48,22 @@ local function make(class: string, props: { [string]: any }, children: { Instanc
 	for _, c in children or {} do
 		c.Parent = inst
 	end
-	if props.Parent then
-		inst.Parent = props.Parent
-	end
+	inst.Parent = props.Parent
 	return inst
 end
-Kit.make = make
-
-local function corner(r: number?): UICorner
-	return make("UICorner", { CornerRadius = UDim.new(0, r or T.Radius) })
+local make = Kit.make
+function Kit.corner(radius: number?): UICorner
+	return make("UICorner", { CornerRadius = UDim.new(0, radius or T.Radius) })
 end
-local function stroke(color: Color3?, thickness: number?): UIStroke
+function Kit.stroke(color: Color3?, thickness: number?): UIStroke
 	return make("UIStroke", {
 		Color = color or T.Ink,
-		Thickness = thickness or T.Stroke,
+		Thickness = thickness or 3,
 		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		LineJoinMode = Enum.LineJoinMode.Round,
 	})
 end
-Kit.corner, Kit.stroke = corner, stroke
-
-local function tween(
+function Kit.tween(
 	obj: Instance,
 	t: number,
 	props: { [string]: any },
@@ -77,15 +74,16 @@ local function tween(
 		for k, v in props do
 			(obj :: any)[k] = v
 		end
-		return
+	else
+		TweenService
+			:Create(
+				obj,
+				TweenInfo.new(t, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out),
+				props
+			)
+			:Play()
 	end
-	TweenService
-		:Create(obj, TweenInfo.new(t, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out), props)
-		:Play()
 end
-Kit.tween = tween
-
--- A screen: a ScreenGui whose root is scaled from the 1100x620 reference.
 function Kit.screen(
 	parent: Instance,
 	name: string,
@@ -95,39 +93,41 @@ function Kit.screen(
 	local gui = make("ScreenGui", {
 		Name = name,
 		ResetOnSpawn = false,
-		IgnoreGuiInset = false,
 		DisplayOrder = order,
 		ScreenInsets = insets or Enum.ScreenInsets.CoreUISafeInsets,
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 		Parent = parent,
 	})
-	local root = make("Frame", { Name = "Root", BackgroundTransparency = 1, Parent = gui })
+	local root = make(
+		"Frame",
+		{ Name = "Root", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = gui }
+	)
 	local scale = make("UIScale", { Parent = root })
 	local function fit()
-		local size = gui.AbsoluteSize
-		if size.X < 1 then
+		local v = gui.AbsoluteSize
+		if v.X < 1 then
 			return
 		end
-		-- floor 0.45: at 0.6 a full-width panel (860 of the 1100 reference) overflows screens under 660 px,
-		-- which includes small phones in landscape
-		local s = math.clamp(math.min(size.X / T.Ref.X, size.Y / T.Ref.Y), 0.45, 1.35)
+		local s = math.clamp(math.min(v.X / T.Ref.X, v.Y / T.Ref.Y), 1, 2)
 		scale.Scale = s
-		root.Size = UDim2.fromOffset(size.X / s, size.Y / s)
+		root.Size = UDim2.fromOffset(v.X / s, v.Y / s)
 	end
-	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit)
-	task.defer(fit)
+	local conn = gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit)
+	gui.Destroying:Once(function()
+		conn:Disconnect()
+	end)
 	fit()
+	task.defer(fit)
 	return gui, root
 end
-
 function Kit.text(parent: Instance, props: { [string]: any }): TextLabel
-	local p = {
+	local p: { [string]: any } = {
 		BackgroundTransparency = 1,
 		FontFace = if props.display then T.Display else T.Body,
 		TextColor3 = T.Ink,
-		TextSize = 20,
-		Size = UDim2.fromOffset(200, 30),
+		TextSize = 18,
 		TextWrapped = true,
+		Size = UDim2.fromOffset(200, 28),
 		Parent = parent,
 	}
 	for k, v in props do
@@ -135,19 +135,8 @@ function Kit.text(parent: Instance, props: { [string]: any }): TextLabel
 			p[k] = v
 		end
 	end
-	-- TextSize stops at 100; past that, keep 100 and scale the label (its frame shrinks to match)
-	local factor = 1
-	if p.TextSize > 100 then
-		factor = p.TextSize / 100
-		p.TextSize = 100
-		local sz: UDim2 = p.Size
-		p.Size = UDim2.new(sz.X.Scale, sz.X.Offset / factor, sz.Y.Scale, sz.Y.Offset / factor)
-	end
+	p.TextSize = math.clamp(p.TextSize, 16, 100)
 	local l = make("TextLabel", p)
-	if factor ~= 1 then
-		l:SetAttribute("BaseScale", factor)
-		make("UIScale", { Scale = factor, Parent = l })
-	end
 	if props.outline then
 		make(
 			"UIStroke",
@@ -156,204 +145,7 @@ function Kit.text(parent: Instance, props: { [string]: any }): TextLabel
 	end
 	return l
 end
-
--- A panel: cream face, ink outline, a soft shadow below.
-function Kit.panel(parent: Instance, props: { [string]: any }): Frame
-	local holder = make("Frame", {
-		Name = props.Name or "Panel",
-		Size = props.Size,
-		Position = props.Position or UDim2.fromScale(0.5, 0.5),
-		AnchorPoint = props.AnchorPoint or Vector2.new(0.5, 0.5),
-		BackgroundTransparency = 1,
-		Parent = parent,
-	})
-	make("Frame", {
-		Name = "Shadow",
-		Size = UDim2.fromScale(1, 1),
-		Position = UDim2.fromOffset(0, 8),
-		BackgroundColor3 = T.Ink,
-		BackgroundTransparency = 0.72,
-		ZIndex = 0,
-		Parent = holder,
-	}, { corner(props.radius) })
-	local face = make("Frame", {
-		Name = "Face",
-		Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = props.color or T.Cream,
-		ZIndex = 1,
-		Parent = holder,
-	}, { corner(props.radius), stroke(T.Ink, props.stroke) })
-	if props.gradient ~= false then
-		make("UIGradient", {
-			Rotation = 90,
-			Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(238, 238, 238)),
-			Parent = face,
-		})
-	end
-	return face
-end
-
-local STYLES = {
-	primary = { T.Lime, T.LimeShade, T.Ink },
-	secondary = { T.Cream, T.CreamShade, T.Ink },
-	accent = { T.Aqua, T.AquaShade, T.Ink },
-	danger = { T.Coral, T.CoralShade, T.Ink },
-	reward = { T.Sun, T.SunShade, T.Ink },
-}
-
--- A chunky button: the face sits on a darker lip and presses down onto it.
-function Kit.button(parent: Instance, props: { [string]: any }): TextButton
-	local fill, shade, ink = table.unpack(STYLES[props.style or "primary"])
-	local lip = props.lip or T.Lip
-	local btn = make("TextButton", {
-		Name = props.Name or "Button",
-		Text = "",
-		AutoButtonColor = false,
-		BackgroundTransparency = 1,
-		Size = props.Size or UDim2.fromOffset(240, 64),
-		Position = props.Position or UDim2.new(),
-		AnchorPoint = props.AnchorPoint or Vector2.zero,
-		Selectable = true,
-		Parent = parent,
-	})
-	make("Frame", {
-		Name = "Lip",
-		Size = UDim2.fromScale(1, 1),
-		Position = UDim2.fromOffset(0, lip),
-		BackgroundColor3 = shade,
-		ZIndex = 1,
-		Parent = btn,
-	}, { corner(props.radius or 16), stroke(ink, T.Stroke) })
-	local face = make("Frame", {
-		Name = "Face",
-		Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = fill,
-		ZIndex = 2,
-		Parent = btn,
-	}, { corner(props.radius or 16), stroke(ink, T.Stroke) })
-	make("UIGradient", {
-		Rotation = 90,
-		Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(226, 226, 226)),
-		Parent = face,
-	})
-	local row = make(
-		"Frame",
-		{ Name = "Row", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 3, Parent = face },
-		{
-			make("UIListLayout", {
-				FillDirection = Enum.FillDirection.Horizontal,
-				HorizontalAlignment = Enum.HorizontalAlignment.Center,
-				VerticalAlignment = Enum.VerticalAlignment.Center,
-				Padding = UDim.new(0, 10),
-				SortOrder = Enum.SortOrder.LayoutOrder,
-			}),
-		}
-	)
-	if props.icon then
-		local ic = Kit.icon(row, props.icon, ink, props.iconSize or 28)
-		ic.LayoutOrder = 1
-	end
-	if props.text then
-		local label = Kit.text(row, {
-			Name = "Label",
-			Text = props.text,
-			display = true,
-			TextSize = props.TextSize or 28,
-			TextColor3 = ink,
-			AutomaticSize = Enum.AutomaticSize.X,
-			Size = UDim2.fromScale(0, 1),
-			TextWrapped = false,
-			LayoutOrder = 2,
-			ZIndex = 3,
-		})
-		label.Name = "Label"
-	end
-	if props.hint then -- a key/button hint chip, e.g. "Space"
-		local chip = make("Frame", {
-			Name = "Hint",
-			BackgroundColor3 = T.Ink,
-			BackgroundTransparency = 0.15,
-			AutomaticSize = Enum.AutomaticSize.X,
-			Size = UDim2.fromOffset(0, 26),
-			LayoutOrder = 3,
-			ZIndex = 3,
-			Parent = row,
-		}, { corner(8), make("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) }) })
-		Kit.text(chip, {
-			Name = "Key",
-			Text = props.hint,
-			TextSize = 15,
-			TextColor3 = T.Cream,
-			AutomaticSize = Enum.AutomaticSize.X,
-			Size = UDim2.fromScale(0, 1),
-			TextWrapped = false,
-			ZIndex = 4,
-		})
-	end
-	local scale = make("UIScale", { Parent = btn })
-	local sel = make("Frame", {
-		Name = "Selection",
-		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 12, 1, 12 + lip),
-		Position = UDim2.fromOffset(-6, -6),
-	}, { corner((props.radius or 16) + 6), stroke(T.Sun, 4) })
-	btn.SelectionImageObject = sel
-	local down = false
-	local function set(pressed: boolean)
-		down = pressed
-		tween(face, 0.06, { Position = UDim2.fromOffset(0, if pressed then lip - 1 else 0) })
-	end
-	btn.MouseEnter:Connect(function()
-		tween(scale, 0.12, { Scale = 1.04 }, Enum.EasingStyle.Back)
-	end)
-	btn.MouseLeave:Connect(function()
-		tween(scale, 0.12, { Scale = 1 })
-		if down then
-			set(false)
-		end
-	end)
-	btn.SelectionGained:Connect(function()
-		tween(scale, 0.12, { Scale = 1.04 }, Enum.EasingStyle.Back)
-	end)
-	btn.SelectionLost:Connect(function()
-		tween(scale, 0.12, { Scale = 1 })
-	end)
-	btn.MouseButton1Down:Connect(function()
-		set(true)
-	end)
-	btn.MouseButton1Up:Connect(function()
-		set(false)
-	end)
-	btn.Activated:Connect(function()
-		if Kit.onClick then
-			Kit.onClick()
-		end
-		if props.onActivated then
-			props.onActivated()
-		end
-	end)
-	return btn
-end
-
--- A square icon button (pause, settings, close).
-function Kit.iconButton(parent: Instance, props: { [string]: any }): TextButton
-	local size = props.size or 56
-	return Kit.button(parent, {
-		Name = props.Name,
-		style = props.style or "secondary",
-		icon = props.icon,
-		iconSize = math.floor(size * 0.5),
-		Size = UDim2.fromOffset(size, size),
-		Position = props.Position,
-		AnchorPoint = props.AnchorPoint,
-		radius = 14,
-		lip = 5,
-		onActivated = props.onActivated,
-	})
-end
-
--- Icons drawn from frames, so the game needs no uploaded images.
-function Kit.icon(parent: Instance, kind: string, color: Color3, size: number): Frame
+local function fallbackIcon(parent: Instance, kind: string, color: Color3, size: number): Frame
 	local box = make("Frame", {
 		Name = "Icon_" .. kind,
 		BackgroundTransparency = 1,
@@ -442,53 +234,301 @@ function Kit.icon(parent: Instance, kind: string, color: Color3, size: number): 
 	return box
 end
 
--- A pill showing a number with an icon (HUD counters).
+function Kit.icon(parent: Instance, kind: string, color: Color3, size: number): GuiObject
+	if not icons[kind] and not icons.info then
+		return fallbackIcon(parent, kind, color, size)
+	end
+	return make("ImageLabel", {
+		Name = "Icon_" .. kind,
+		Image = icons[kind] or icons.info or "",
+		ImageColor3 = color,
+		ScaleType = Enum.ScaleType.Fit,
+		BackgroundTransparency = 1,
+		Size = UDim2.fromOffset(size, size),
+		Parent = parent,
+	})
+end
+function Kit.panel(parent: Instance, props: { [string]: any }): Frame
+	local holder = make("Frame", {
+		Name = props.Name or "Panel",
+		Size = props.Size or UDim2.fromOffset(620, 300),
+		Position = props.Position or UDim2.fromScale(0.5, 0.5),
+		AnchorPoint = props.AnchorPoint or Vector2.new(0.5, 0.5),
+		BackgroundTransparency = 1,
+		Parent = parent,
+	})
+	make("Frame", {
+		Name = "Shadow",
+		Size = UDim2.fromScale(1, 1),
+		Position = UDim2.fromOffset(0, 10),
+		BackgroundColor3 = T.Ink,
+		BackgroundTransparency = 0.72,
+		Parent = holder,
+	}, { Kit.corner(props.radius) })
+	local face = make("Frame", {
+		Name = "Face",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = props.color or T.Cream,
+		Parent = holder,
+	}, { Kit.corner(props.radius), Kit.stroke(T.Ink, 4) })
+	if props.title then
+		local ribbon = make("Frame", {
+			Name = "Ribbon",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0),
+			Size = UDim2.new(0.7, 0, 0, 52),
+			BackgroundColor3 = props.headerColor or T.Aqua,
+			ZIndex = 3,
+			Parent = face,
+		}, { Kit.corner(14), Kit.stroke() })
+		Kit.text(
+			ribbon,
+			{ Text = props.title, display = true, TextSize = 30, Size = UDim2.fromScale(1, 1), ZIndex = 4 }
+		)
+	end
+	return face
+end
+local styles = {
+	primary = { T.Lime, T.LimeShade },
+	secondary = { T.Cream, T.CreamShade },
+	accent = { T.Aqua, T.AquaShade },
+	danger = { T.Coral, T.CoralShade },
+	reward = { T.Sun, T.SunShade },
+}
+function Kit.setButton(btn: TextButton, enabled: boolean, text: string?)
+	btn.Interactable = enabled
+	btn.Selectable = enabled
+	btn:SetAttribute("Disabled", not enabled)
+	local face = btn:FindFirstChild("Face") :: Frame
+	face.BackgroundColor3 = if enabled then btn:GetAttribute("Fill") else T.Muted
+	local gloss = face:FindFirstChild("Gloss") :: Frame
+	gloss.Visible = enabled
+	local label = face:FindFirstChild("Label", true) :: TextLabel?
+	if label then
+		label.TextTransparency = if enabled then 0 else 0.35
+		if text then
+			label.Text = text
+		end
+	end
+end
+function Kit.button(parent: Instance, props: { [string]: any }): TextButton
+	local colors = styles[props.style or "primary"] or styles.primary
+	local lip = props.lip or 6
+	local btn = make("TextButton", {
+		Name = props.Name or "Button",
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundTransparency = 1,
+		Size = props.Size or UDim2.fromOffset(260, 64),
+		Position = props.Position or UDim2.new(),
+		AnchorPoint = props.AnchorPoint or Vector2.zero,
+		Selectable = true,
+		Parent = parent,
+	})
+	btn:SetAttribute("Fill", colors[1])
+	make("UISizeConstraint", { MinSize = Vector2.new(48, 48), Parent = btn })
+	make("Frame", {
+		Name = "Shadow",
+		Size = UDim2.fromScale(1, 1),
+		Position = UDim2.fromOffset(0, 10),
+		BackgroundColor3 = T.Ink,
+		BackgroundTransparency = 0.7,
+		Parent = btn,
+	}, { Kit.corner(16) })
+	make("Frame", {
+		Name = "Lip",
+		Size = UDim2.fromScale(1, 1),
+		Position = UDim2.fromOffset(0, lip),
+		BackgroundColor3 = colors[2],
+		Parent = btn,
+	}, { Kit.corner(16), Kit.stroke() })
+	local face = make("Frame", {
+		Name = "Face",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = colors[1],
+		ZIndex = 2,
+		Parent = btn,
+	}, { Kit.corner(16), Kit.stroke() })
+	make("UIGradient", {
+		Rotation = 90,
+		Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(226, 226, 226)),
+		Parent = face,
+	})
+	make("Frame", {
+		Name = "Gloss",
+		Position = UDim2.fromOffset(6, 5),
+		Size = UDim2.new(1, -12, 0.4, -3),
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		BackgroundTransparency = 0.8,
+		ZIndex = 2,
+		Parent = face,
+	}, { Kit.corner(10) })
+	local row = make(
+		"Frame",
+		{ Name = "Row", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 3, Parent = face },
+		{
+			make("UIListLayout", {
+				FillDirection = Enum.FillDirection.Horizontal,
+				HorizontalAlignment = Enum.HorizontalAlignment.Center,
+				VerticalAlignment = Enum.VerticalAlignment.Center,
+				Padding = UDim.new(0, 8),
+				SortOrder = Enum.SortOrder.LayoutOrder,
+			}),
+		}
+	)
+	if props.icon then
+		local ic = Kit.icon(row, props.icon, T.Ink, props.iconSize or 28)
+		ic.ZIndex = 4
+		ic.LayoutOrder = 1
+	end
+	if props.text then
+		Kit.text(row, {
+			Name = "Label",
+			Text = props.text,
+			TextSize = props.TextSize or 28,
+			display = true,
+			TextWrapped = false,
+			AutomaticSize = Enum.AutomaticSize.X,
+			Size = UDim2.fromScale(0, 1),
+			LayoutOrder = 2,
+			ZIndex = 4,
+		})
+	end
+	local scale = make("UIScale", { Parent = btn })
+	local function press(down: boolean)
+		if btn:GetAttribute("Disabled") then
+			return
+		end
+		Kit.tween(
+			face,
+			if down then 0.06 else 0.15,
+			{ Position = UDim2.fromOffset(0, if down then 5 else 0) },
+			if down then Enum.EasingStyle.Quad else Enum.EasingStyle.Back
+		)
+		Kit.tween(
+			scale,
+			if down then 0.06 else 0.15,
+			{ Scale = if down then 0.97 else 1 },
+			Enum.EasingStyle.Back
+		)
+	end
+	btn.MouseButton1Down:Connect(function()
+		press(true)
+	end)
+	btn.MouseButton1Up:Connect(function()
+		press(false)
+	end)
+	btn.MouseLeave:Connect(function()
+		press(false)
+	end)
+	btn.MouseEnter:Connect(function()
+		if btn.Interactable then
+			Kit.tween(scale, 0.12, { Scale = 1.04 }, Enum.EasingStyle.Back)
+		end
+	end)
+	btn.SelectionGained:Connect(function()
+		Kit.tween(scale, 0.12, { Scale = 1.04 }, Enum.EasingStyle.Back)
+	end)
+	btn.SelectionLost:Connect(function()
+		press(false)
+	end)
+	local sel = make(
+		"Frame",
+		{ BackgroundTransparency = 1, Size = UDim2.new(1, 10, 1, 16), Position = UDim2.fromOffset(-5, -5) },
+		{ Kit.corner(20), Kit.stroke(T.Sun, 4) }
+	)
+	btn.SelectionImageObject = sel
+	btn.Destroying:Once(function()
+		sel:Destroy()
+	end)
+	btn.Activated:Connect(function()
+		press(false)
+		if Kit.onClick then
+			Kit.onClick()
+		end
+		if props.onActivated then
+			props.onActivated()
+		end
+	end)
+	return btn
+end
+function Kit.iconButton(parent: Instance, props: { [string]: any }): TextButton
+	local n = math.max(48, props.size or 52)
+	return Kit.button(parent, {
+		Name = props.Name,
+		Size = UDim2.fromOffset(n, n),
+		Position = props.Position,
+		AnchorPoint = props.AnchorPoint,
+		style = props.style or "secondary",
+		icon = props.icon,
+		iconSize = props.iconSize or 28,
+		onActivated = props.onActivated,
+	})
+end
 function Kit.pill(parent: Instance, props: { [string]: any }): (Frame, TextLabel)
-	local pill = make("Frame", {
+	local h = props.height or 44
+	local frame = make("Frame", {
 		Name = props.Name or "Pill",
-		AutomaticSize = Enum.AutomaticSize.X,
-		Size = UDim2.fromOffset(0, props.height or 48),
+		Size = UDim2.fromOffset(props.width or 148, h),
 		Position = props.Position or UDim2.new(),
 		AnchorPoint = props.AnchorPoint or Vector2.zero,
 		BackgroundColor3 = props.color or T.Cream,
 		Parent = parent,
-	}, {
-		corner(24),
-		stroke(T.Ink, T.Stroke),
-		make("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 16) }),
-		make("UIListLayout", {
-			FillDirection = Enum.FillDirection.Horizontal,
-			VerticalAlignment = Enum.VerticalAlignment.Center,
-			Padding = UDim.new(0, 8),
-			SortOrder = Enum.SortOrder.LayoutOrder,
-		}),
-	})
+	}, { Kit.corner(h / 2), Kit.stroke() })
 	if props.icon then
 		local badge = make("Frame", {
 			Name = "Badge",
-			Size = UDim2.fromOffset(34, 34),
-			BackgroundColor3 = props.iconBg or T.Ink,
-			LayoutOrder = 1,
-			Parent = pill,
-		}, { corner(17) })
-		local ic = Kit.icon(badge, props.icon, props.iconColor or T.Cream, 22)
-		ic.AnchorPoint = Vector2.new(0.5, 0.5)
-		ic.Position = UDim2.fromScale(0.5, 0.5)
+			Size = UDim2.fromOffset(36, 36),
+			Position = UDim2.new(0, -3, 0.5, 0),
+			AnchorPoint = Vector2.new(0, 0.5),
+			BackgroundColor3 = props.iconBg or T.Sun,
+			Parent = frame,
+		}, { Kit.corner(18), Kit.stroke(T.Ink, 2) })
+		local ic = Kit.icon(badge, props.icon, props.iconColor or T.Ink, 26)
+		ic.Position = UDim2.fromOffset(5, 5)
 	end
-	local label = Kit.text(pill, {
+	local text = Kit.text(frame, {
 		Name = "Value",
 		Text = props.text or "",
-		display = true,
 		TextSize = props.TextSize or 26,
-		AutomaticSize = Enum.AutomaticSize.X,
-		Size = UDim2.fromScale(0, 1),
+		display = true,
+		Position = UDim2.fromOffset(if props.icon then 37 else 8, 0),
+		Size = UDim2.new(1, if props.icon then -45 else -16, 1, 0),
 		TextWrapped = false,
-		LayoutOrder = 2,
 	})
-	return pill, label
+	return frame, text
 end
-
--- An on/off switch. Returns the row and a setter.
+function Kit.card(parent: Instance, props: { [string]: any }): Frame
+	local card = make("Frame", {
+		Name = props.Name or "Card",
+		Size = props.Size or UDim2.fromOffset(136, 180),
+		Position = props.Position or UDim2.new(),
+		BackgroundColor3 = T.Cream,
+		Parent = parent,
+	}, { Kit.corner(14), Kit.stroke() })
+	local band = make("Frame", {
+		Name = "Band",
+		Size = UDim2.new(1, 0, 0, 32),
+		BackgroundColor3 = props.color or T.Common,
+		Parent = card,
+	}, { Kit.corner(14) })
+	Kit.text(
+		band,
+		{ Name = "Rarity", Text = props.rarity or "", Size = UDim2.fromScale(1, 1), TextSize = 16 }
+	)
+	if props.icon then
+		local ic = Kit.icon(card, props.icon, props.iconColor or T.Ink, 60)
+		ic.Position = UDim2.new(0.5, -30, 0, 40)
+	end
+	Kit.text(card, {
+		Name = "Name",
+		Text = props.text or "",
+		TextSize = 16,
+		Position = UDim2.fromOffset(6, 104),
+		Size = UDim2.new(1, -12, 0, 44),
+	})
+	return card
+end
 function Kit.switch(parent: Instance, props: { [string]: any }): (TextButton, (boolean) -> ())
 	local value = props.value == true
 	local row = make("TextButton", {
@@ -496,50 +536,36 @@ function Kit.switch(parent: Instance, props: { [string]: any }): (TextButton, (b
 		Text = "",
 		AutoButtonColor = false,
 		BackgroundTransparency = 1,
-		Size = props.Size or UDim2.new(1, 0, 0, 64),
-		LayoutOrder = props.LayoutOrder or 0,
+		Size = props.Size or UDim2.new(1, 0, 0, 56),
+		Position = props.Position or UDim2.new(),
 		Selectable = true,
 		Parent = parent,
 	})
 	Kit.text(row, {
-		Name = "Label",
 		Text = props.text,
-		TextSize = 24,
 		Size = UDim2.new(1, -110, 1, 0),
 		TextXAlignment = Enum.TextXAlignment.Left,
-		FontFace = T.BodyHeavy,
+		TextSize = 20,
 	})
 	local track = make("Frame", {
 		Name = "Track",
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.fromScale(1, 0.5),
-		Size = UDim2.fromOffset(86, 44),
+		Position = UDim2.new(1, -88, 0.5, -22),
+		Size = UDim2.fromOffset(88, 44),
 		BackgroundColor3 = T.Muted,
 		Parent = row,
-	}, { corner(22), stroke(T.Ink, T.Stroke) })
+	}, { Kit.corner(22), Kit.stroke() })
 	local knob = make("Frame", {
 		Name = "Knob",
-		AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.new(0, 4, 0.5, 0),
+		Position = UDim2.fromOffset(4, 4),
 		Size = UDim2.fromOffset(36, 36),
 		BackgroundColor3 = T.Cream,
 		Parent = track,
-	}, { corner(18), stroke(T.Ink, 2) })
-	local sel = make(
-		"Frame",
-		{ BackgroundTransparency = 1, Size = UDim2.new(1, 12, 1, 4), Position = UDim2.fromOffset(-6, -2) },
-		{ corner(14), stroke(T.Sun, 4) }
-	)
-	row.SelectionImageObject = sel
+	}, { Kit.corner(18), Kit.stroke(T.Ink, 2) })
 	local function set(v: boolean)
 		value = v
-		tween(
-			knob,
-			0.18,
-			{ Position = if v then UDim2.new(1, -40, 0.5, 0) else UDim2.new(0, 4, 0.5, 0) },
-			Enum.EasingStyle.Back
-		)
-		tween(track, 0.18, { BackgroundColor3 = if v then T.Lime else T.Muted })
+		Kit.tween(knob, 0.18, { Position = UDim2.fromOffset(if v then 48 else 4, 4) }, Enum.EasingStyle.Back)
+		Kit.tween(track, 0.18, { BackgroundColor3 = if v then T.Lime else T.Muted })
+		row:SetAttribute("On", v)
 	end
 	set(value)
 	row.Activated:Connect(function()
@@ -553,30 +579,38 @@ function Kit.switch(parent: Instance, props: { [string]: any }): (TextButton, (b
 	end)
 	return row, set
 end
-
--- Show and hide with a pop: modal panels grow from 0.88 with a slight overshoot.
 function Kit.pop(obj: GuiObject, visible: boolean, delay: number?)
 	local scale = obj:FindFirstChildOfClass("UIScale") or make("UIScale", { Parent = obj })
+	obj.Visible = visible
 	if visible then
-		obj.Visible = true
-		scale.Scale = if Kit.reducedMotion then 1 else 0.88
+		scale.Scale = if Kit.reducedMotion or GuiService.ReducedMotionEnabled then 1 else 0.88
 		task.delay(delay or 0, function()
-			tween(scale, 0.28, { Scale = 1 }, Enum.EasingStyle.Back)
+			if obj.Parent then
+				Kit.tween(scale, 0.28, { Scale = 1 }, Enum.EasingStyle.Back)
+			end
 		end)
-	else
-		obj.Visible = false
 	end
 end
-
--- Punch a value change (a counter ticking up): scale 1.25 back to 1.
 function Kit.punch(obj: GuiObject, amount: number?)
-	if Kit.reducedMotion then
+	if Kit.reducedMotion or GuiService.ReducedMotionEnabled then
 		return
 	end
-	local base = obj:GetAttribute("BaseScale") or 1
 	local scale = obj:FindFirstChildOfClass("UIScale") or make("UIScale", { Parent = obj })
-	scale.Scale = base * (amount or 1.22)
-	tween(scale, 0.3, { Scale = base }, Enum.EasingStyle.Back)
+	scale.Scale = amount or 1.25
+	Kit.tween(scale, 0.3, { Scale = 1 }, Enum.EasingStyle.Back)
 end
-
+function Kit.roll(label: TextLabel, value: number, format: ((number) -> string)?)
+	local old = label:FindFirstChild("Roll")
+	if old then
+		old:Destroy()
+	end
+	local n =
+		make("NumberValue", { Name = "Roll", Value = label:GetAttribute("Number") or 0, Parent = label })
+	label:SetAttribute("Number", value)
+	n.Changed:Connect(function(v)
+		label.Text = if format then format(v) else tostring(math.floor(v))
+	end)
+	Kit.tween(n, 0.8, { Value = value })
+	label.Text = if format then format(n.Value) else tostring(math.floor(n.Value))
+end
 return Kit
