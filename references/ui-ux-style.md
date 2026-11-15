@@ -161,7 +161,7 @@ CHANGELOG
 Components never name a colour; they ask for a role (`primary`, `surface`, `outline`, `onPrimary`,
 rarity colours). A theme is only tokens: colour roles, shape (radius, button radius, stroke, lip,
 shadow, gradient, title style `tab` / `banner` / `plain`, glow), type (display, body and button
-families from Roblox's built-in fonts, title case, text stroke) and motion (pop scale, time, easing,
+families bundled with Roblox or available as public font assets, title case, text stroke) and motion (pop scale, time, easing,
 press scale). Seven starting themes live in `templates/project/ui-themes.json`
 (previews: `docs/images/ui-themes-1.jpg`, `ui-themes-2.jpg`):
 
@@ -188,3 +188,67 @@ Making one for a new game (do this before any screen is built, after STYLE.md fr
 4. `tools/uitheme luau --out src/shared/Themes.luau` writes the tokens for the Luau kit.
 5. Prefer Roblox's 2026 `UIShadow` (drop, inset for pressed, text shadow) and per-corner radii over
    stacked frames for lips and shadows (see `visual-craft.md` section 3).
+
+The template loads the generated module automatically and defaults to Toybox. Select the game's theme
+in the client entry point **before requiring the HUD** (the HUD builds as it is required):
+
+```luau
+local Kit = require(script.Parent.UiKit)
+Kit.setTheme("Royal")
+local Hud = require(script.Parent.Hud)
+```
+
+`setTheme` also refreshes existing kit components. Unknown names raise an error without switching.
+For a one-game variation, prefer editing its JSON theme and regenerating; for a runtime preference,
+pass partial token groups as the second argument. These use Luau values, including `Color3` and `Font`:
+
+```luau
+Kit.setTheme("Toybox", {
+    color = { primary = Color3.fromRGB(180, 230, 75) },
+    shape = { lip = 4 },
+    motion = { popFrom = 0.94, popTime = 0.18, ease = "Quad", press = 0.97 },
+})
+Kit.reducedMotion = true -- also respects Roblox's ReducedMotionEnabled
+```
+
+Overrides merge with that named theme; each call starts fresh and never edits the generated tables.
+Keep fill/shade/on-colour roles together when changing contrast. Explicit component props such as
+`panel.color`, `panel.headerColor`, `text.FontFace`, `text.TextColor3`, `button.lip`, and `card.color`
+win over tokens. `Kit.tokens` exposes the current groups; `Kit.Theme` retains the old aliases
+(`Cream`, `Ink`, `Lime`, `Display`, `Ref`, etc.) in the same table for existing callers. Colours copied
+into game-owned instances remain the game's responsibility when switching at runtime.
+
+`Kit.button` accepts `primary`, `secondary`, `danger`, `accent`, `neutral`, and the legacy `reward`
+(alias of `accent`). `Kit.setButton` preserves the disabled role across switches. `Kit.rarityCard`
+(and `Kit.card`) accepts `rarity`, `icon`, `text`, `subtitle`, optional `price`, `enabled`, and
+`onActivated`. `Kit.scrim` and `Kit.toast` use their respective colour roles. Panel titles follow
+`shape.title`: a coloured tab, a title-band banner, or plain text inside the panel.
+`Kit.corner(radius, { TopLeftRadius = 0 })` optionally overrides individual corners on supported builds.
+
+To reproduce the preview, run `scenarios/ui-themes.luau` in Studio's **Client** context during Play
+(with other game HUDs hidden by the scenario). It first checks live switching, overrides, disabled
+states, native text shadows, scale compensation, and the text/target floors, then builds the three
+844x390 screens. Change the `ThemePreview` ScreenGui's `Theme` attribute to `Toybox`, `Night Arcade`,
+`Cozy`, or `Royal`, and `Screen` to `HUD`, `Shop`, or `Result`; capture with `studio shot`.
+The scenario uses drawn fallback icons; production games should still call `configureIcons`.
+Native UIShadow capability is detected at runtime, with the old-build approximation isolated in
+`templates/project/src/client/UiShadow.luau`. Blur, offsets and spread account for ancestor UIScales.
+
+Font correction (verified against the Studio 0.747 content families and Roblox's public font-family
+JSON): the earlier boards used browser-only Titan One / Bungee names. Bubblegum now uses the bundled
+Fredoka One; Night Arcade uses Roblox's [Bungee Inline font](https://create.roblox.com/store/asset/12187370000/)
+through its public font-family asset ID. The generator and HTML sheet use these same corrected names;
+no nonexistent local `Bungee.json` or `TitanOne.json` is emitted. Royal exports ExtraBold for its
+800-weight title and a separate readable Nunito button font.
+
+`type.displayScale` / `type.buttonScale` are optional Roblox font-metric corrections (default 1),
+not layout scaling; the HTML preview already uses browser font metrics. Royal's bundled blackletter
+needs `displayScale = 1.5` to match the preview's visible title size. Its Nunito buttons stay at 1.
+
+Verified 2026-11-15 on Studio 0.747: the Client scenario passed live theme/override/disabled-state,
+text-shadow, UIScale and reduced-motion counter assertions. Reviewed 12 actual 844x390 captures
+(HUD, shop, result/settings for Toybox, Night Arcade, Cozy, Royal) against `tools/uitheme sheet`;
+corrected modal layering, action positions and native font metrics. Each screen also passed the
+16px text / 48px target / on-screen action / <=100 enabled shadow audit. A separate real input
+probe verified native Inset press, token press scale, lip restoration on release, and the pressed
+appearance. Captures remain external to the repository. The older-build fallback was not exercised.

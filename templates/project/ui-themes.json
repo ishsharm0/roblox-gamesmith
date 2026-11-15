@@ -117,7 +117,7 @@
    "glow": 0
   },
   "type": {
-   "display": "TitanOne",
+   "display": "FredokaOne",
    "body": "Nunito",
    "bodyWeight": 900,
    "titleCase": "upper",
@@ -253,7 +253,7 @@
    "glow": 12
   },
   "type": {
-   "display": "Bungee",
+   "display": "BungeeInline",
    "body": "Montserrat",
    "bodyWeight": 700,
    "titleCase": "upper",
@@ -396,7 +396,8 @@
    "bodyWeight": 700,
    "titleCase": "none",
    "textStroke": 0,
-   "button": "Nunito"
+   "button": "Nunito",
+   "displayScale": 1.5
   },
   "motion": {
    "popFrom": 0.94,
