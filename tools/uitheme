@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+"""Design a game UI theme as tokens, look at it, then hand the same tokens to the Roblox kit.
+
+  uitheme sheet [themes.json] [--only Name] [--out dir]   render a phone-size preview of every theme (PNG)
+  uitheme luau  [themes.json] [--out Themes.luau]         write the token tables the Luau UiKit reads
+  uitheme new   <Name> --from <Existing> [themes.json]    copy a theme to start a bespoke one
+
+A theme is ONLY tokens (colour roles, shape, type, motion). Components never name a colour; they ask for
+a role ("primary", "surface", "outline"). So a bespoke kit for a new game is: copy the nearest theme,
+change tokens, render the sheet, look at it at phone size, repeat. The sheet shows the three states a
+theme has to survive: HUD over a bright world, a shop panel with rarity cards, a result modal with one
+primary action. Preview is HTML drawn with the same geometry as the kit (lip, stroke, radius, 844x390
+reference); fonts are the Google versions of Roblox's built-in families. Needs a Chromium (Playwright's
+cache or Google Chrome) and network for fonts/icons on first render.
+"""
+import argparse, glob, json, os, subprocess, sys, tempfile
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+DEFAULT = HERE.parent / "templates" / "project" / "ui-themes.json"
+# Roblox font family file -> CSS family (Google Fonts) used by the preview
+FONTS = {"FredokaOne": "Fredoka One", "LuckiestGuy": "Luckiest Guy", "TitanOne": "Titan One", "Bangers": "Bangers",
+         "Bungee": "Bungee", "Nunito": "Nunito", "Montserrat": "Montserrat", "BuilderSans": "Nunito Sans",
+         "Oswald": "Oswald", "Fondamento": "Fondamento", "GrenzeGotisch": "Grenze Gotisch", "Merriweather": "Merriweather",
+         "Michroma": "Michroma", "PressStart2P": "Press Start 2P", "PatrickHand": "Patrick Hand", "Kalam": "Kalam",
+         "PermanentMarker": "Permanent Marker", "Ubuntu": "Ubuntu", "JosefinSans": "Josefin Sans", "Roboto": "Roboto"}
+RARITY = ["common", "uncommon", "rare", "epic", "legendary"]
+
+
+def chromium():
+    c = sorted(glob.glob(os.path.expanduser("~/Library/Caches/ms-playwright/chromium_headless_shell-*/*/*headless*shell*")))
+    c += sorted(glob.glob(os.path.expanduser("~/.cache/ms-playwright/chromium_headless_shell-*/*/*headless*shell*")))
+    c = [p for p in c if os.access(p, os.X_OK) and os.path.isfile(p)]
+    for p in ("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"):
+        if os.path.exists(p):
+            c.append(p)
+    if not c:
+        sys.exit("no Chromium found: `npx playwright install chromium-headless-shell` or install Chrome")
+    return c[0]
+
+
+def css_vars(t):
+    c, s, ty = t["color"], t["shape"], t["type"]
+    v = {f"--{k}": val for k, val in c.items()}
+    v.update({"--radius": f'{s["radius"]}px', "--bradius": f'{s["buttonRadius"]}px', "--stroke": f'{s["stroke"]}px',
+              "--lip": f'{s["lip"]}px', "--shadow": f'{s["shadow"]}px', "--shadowA": s["shadowAlpha"],
+              "--grad": s["gradient"], "--tstroke": f'{ty["textStroke"]}px',
+              "--display": f"'{FONTS[ty['display']]}'", "--body": f"'{FONTS[ty['body']]}'",
+              "--bodyW": ty["bodyWeight"], "--btnfont": f"'{FONTS[ty.get('button', ty['display'])]}'", "--displayW": ty.get("displayWeight", 400),
+              "--case": "uppercase" if ty["titleCase"] == "upper" else "none",
+              "--glow": f'0 0 {s.get("glow", 0)}px {c["outline"]}' if s.get("glow") else "0 0 0 transparent"})
+    for r in RARITY:
+        v[f"--r-{r}"] = t["rarity"][r]
+    return ";".join(f"{k}:{val}" for k, val in v.items())
+
+
+CSS = r"""
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#15171c;font-family:var(--body);width:844px}
+.screen{font-family:var(--body);position:relative;width:844px;height:390px;overflow:hidden;margin-bottom:14px;color:var(--text);font-weight:var(--bodyW)}
+.world{position:absolute;inset:0;background:linear-gradient(var(--worldTop),var(--worldBottom) 58%,var(--worldGround) 58.2%,var(--worldGround))}
+.world i{position:absolute;border-radius:50%;background:#fff;opacity:.5;filter:blur(2px)}
+.world b{position:absolute;bottom:22%;border-radius:10px 10px 0 0;background:var(--worldProp);opacity:.9}
+.dim{position:absolute;inset:0;background:var(--scrim);opacity:var(--scrimAlpha)}
+.t{font-family:var(--display);font-weight:var(--displayW);text-transform:var(--case);letter-spacing:.3px}
+.ts{-webkit-text-stroke:var(--tstroke) var(--outline);paint-order:stroke fill}
+/* layered box: shadow -> lip -> face. The lip is the shade colour showing under the face. */
+.box{position:absolute;border-radius:var(--radius);background:var(--surface);border:var(--stroke) solid var(--outline);
+  box-shadow:0 var(--shadow) 0 rgba(0,0,0,var(--shadowA)),var(--glow)}
+.box.grad{background:linear-gradient(var(--surfaceTop),var(--surface))}
+.btn{position:absolute;border-radius:var(--bradius);border:var(--stroke) solid var(--outline);display:flex;align-items:center;justify-content:center;gap:8px;
+  font-family:var(--btnfont);font-weight:var(--displayW);text-transform:var(--case);font-size:20px;
+  background:linear-gradient(color-mix(in srgb,var(--f) calc(100% - var(--grad)*100%),#fff),var(--f));color:var(--on);
+  box-shadow:0 var(--lip) 0 var(--sh),0 calc(var(--lip) + var(--stroke)) 0 var(--outline),0 calc(var(--lip) + var(--shadow)) 0 rgba(0,0,0,var(--shadowA)),var(--glow)}
+.btn.pri{--f:var(--primary);--sh:var(--primaryShade);--on:var(--onPrimary)}
+.btn.sec{--f:var(--secondary);--sh:var(--secondaryShade);--on:var(--onSecondary)}
+.btn.dan{--f:var(--danger);--sh:var(--dangerShade);--on:var(--onDanger)}
+.btn.acc{--f:var(--accent);--sh:var(--accentShade);--on:var(--onAccent)}
+.btn.neu{--f:var(--surface);--sh:var(--surfaceAlt);--on:var(--text)}
+.btn.off{--f:var(--muted);--sh:var(--mutedShade);--on:var(--textSoft)}
+.btn i{font-size:1.25em}
+.pill{position:absolute;height:40px;border-radius:20px;background:var(--surface);border:var(--stroke) solid var(--outline);display:flex;align-items:center;
+  box-shadow:0 4px 0 rgba(0,0,0,var(--shadowA)),var(--glow);font-family:var(--display);font-weight:var(--displayW);font-size:20px}
+.coin{width:40px;height:40px;margin:-2px 0 0 -4px;border-radius:50%;background:var(--accent);border:var(--stroke) solid var(--outline);display:flex;align-items:center;justify-content:center;color:var(--onAccent);font-size:22px;flex:none}
+.bar{position:absolute;left:14px;right:14px;bottom:6px;height:9px;border-radius:5px;background:var(--surfaceAlt)}
+.bar u{display:block;height:100%;border-radius:5px;background:var(--secondary)}
+.dot{position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;background:var(--danger);border:2px solid var(--outline)}
+.toast{position:absolute;left:50%;transform:translateX(-50%);padding:9px 22px;border-radius:14px;background:var(--toast);color:var(--onToast);font-family:var(--display);font-weight:var(--displayW);font-size:18px;border:var(--stroke) solid var(--outline);white-space:nowrap}
+.title{position:absolute;left:50%;transform:translateX(-50%);height:46px;padding:0 34px;display:flex;align-items:center;font-size:26px;white-space:nowrap}
+.title.tab,.title.banner{border-radius:var(--bradius);border:var(--stroke) solid var(--outline);background:var(--tb);color:var(--ton);box-shadow:0 4px 0 rgba(0,0,0,var(--shadowA))}
+.title.banner{border-radius:8px;padding:0 44px}
+.title.plain{color:var(--text)}
+.card{position:absolute;border-radius:calc(var(--radius) - 4px);background:var(--surfaceAlt);border:var(--stroke) solid var(--rc);overflow:visible}
+.card .ic{position:absolute;left:12px;right:12px;top:12px;height:74px;border-radius:12px;background:color-mix(in srgb,var(--rc) 28%,var(--surface));display:flex;align-items:center;justify-content:center;font-size:44px;color:var(--rc)}
+.card .tag{position:absolute;top:-10px;left:50%;transform:translateX(-50%);padding:2px 10px;border-radius:9px;background:var(--rc);color:#fff;font-size:12px;font-weight:900;letter-spacing:.5px;border:2px solid var(--outline);white-space:nowrap;text-transform:uppercase}
+.card h4{position:absolute;left:0;right:0;top:92px;text-align:center;font-size:18px;font-family:var(--display);font-weight:var(--displayW)}
+.card p{position:absolute;left:0;right:0;top:116px;text-align:center;font-size:16px;color:var(--textSoft)}
+.sw{position:absolute;width:64px;height:34px;border-radius:17px;border:var(--stroke) solid var(--outline);background:var(--muted)}
+.sw.on{background:var(--primary)}
+.sw u{position:absolute;top:2px;left:2px;width:24px;height:24px;border-radius:50%;background:#fff;border:var(--stroke) solid var(--outline)}
+.sw.on u{left:auto;right:2px}
+.row{position:absolute;font-size:18px}
+.star{font-size:54px;color:var(--accent);-webkit-text-stroke:var(--stroke) var(--outline);paint-order:stroke fill;position:absolute}
+.name{position:absolute;left:12px;top:8px;font:700 13px Menlo,monospace;color:#fff;background:#000a;padding:2px 8px;border-radius:6px;z-index:9}
+"""
+
+
+def screen_html(t):
+    c, s = t["color"], t["shape"]
+    tk = s["title"]
+    grad = " grad" if c.get("surfaceTop") else ""
+    world = ('<div class="world"><i style="left:8%;top:10%;width:120px;height:34px"></i><i style="left:62%;top:20%;width:160px;height:40px"></i>'
+             '<b style="left:30%;width:70px;height:96px"></b><b style="left:39%;width:110px;height:140px"></b><b style="left:53%;width:60px;height:80px"></b></div>')
+    ts = " ts" if t["type"]["textStroke"] else ""
+    hud = f'''
+<div class="pill" style="left:16px;top:12px;width:148px"><div class="coin"><i class="ph-fill ph-coin"></i></div><span class="{ts.strip()}" style="flex:1;text-align:center">12.4K</span></div>
+<div class="pill" style="left:272px;top:12px;width:300px;height:46px;border-radius:16px;justify-content:center;align-items:flex-start;padding-top:4px;font-size:17px"><span class="{ts.strip()}">Fort 3 · 63% down</span><div class="bar"><u style="width:63%"></u></div></div>
+<div class="btn neu" style="right:16px;top:10px;width:48px;height:44px"><i class="ph-fill ph-pause"></i></div>
+'''
+    stack = "".join(f'<div class="btn {k}" style="right:16px;top:{76 + i * 62}px;width:52px;height:48px"><i class="ph-fill ph-{ic}"></i>{dot}</div>'
+                    for i, (k, ic, dot) in enumerate((("sec", "storefront", '<span class="dot"></span>'), ("acc", "book-open-text", ""), ("neu", "shield", ""), ("neu", "arrows-clockwise", ""))))
+    hot = "".join(f'<div class="btn {"pri" if i == 0 else "neu"}" style="left:{300 + i * 64}px;bottom:{18 + (6 if i == 0 else 0)}px;width:56px;height:52px"><i class="ph-fill ph-{ic}"></i></div>'
+                  for i, ic in enumerate(("circle", "bomb", "git-fork", "barbell")))
+    a = f'<div class="screen">{world}<span class="name">{t["name"]} · HUD</span>{hud}{stack}{hot}<div class="toast{ts}" style="top:70px">+150 coins · x1.2</div></div>'
+    cards = ""
+    for i, (r, ic, nm, sub, btn, price) in enumerate((("common", "lightning", "Power", "Lv 3 / 8", "pri", "60"), ("rare", "timer", "Reload", "Lv 1 / 8", "pri", "240"),
+                                                     ("legendary", "bomb", "Bomb Ball", "Unlock", "off", "5K"))):
+        cards += (f'<div class="card" style="--rc:var(--r-{r});left:{28 + i * 178}px;top:76px;width:162px;height:206px"><span class="tag">{r}</span>'
+                  f'<div class="ic"><i class="ph-fill ph-{ic}"></i></div><h4>{nm}</h4><p>{sub}</p>'
+                  f'<div class="btn {btn}" style="left:12px;right:12px;bottom:{12 + s["lip"]}px;height:44px;font-size:18px"><i class="ph-fill ph-coin"></i>{price}</div></div>')
+    tb = {"tab": ("var(--secondary)", "var(--onSecondary)"), "banner": ("var(--titleBand)", "var(--onTitleBand)"), "plain": ("none", "var(--text)")}[tk]
+    title = lambda text, top, band=None: (f'<div class="title t {tk}{ts if tk != "plain" else ""}" style="top:{top}px;--tb:{band or tb[0]};--ton:{tb[1]}">{text}</div>')
+    b = (f'<div class="screen">{world}{hud}{stack}<div class="dim"></div><span class="name">{t["name"]} · shop</span>'
+         f'<div class="box{grad}" style="left:132px;top:44px;width:580px;height:{318 - s["shadow"]}px">{cards}</div>{title("Toy Shop", 22 if tk != "plain" else 54)}'
+         f'<div class="btn dan" style="left:{712 - 30}px;top:30px;width:48px;height:44px"><i class="ph-bold ph-x"></i></div></div>')
+    stars = "".join(f'<i class="ph-fill ph-star star" style="left:{96 + i * 66}px;top:{50 - (10 if i == 1 else 0)}px;{"opacity:.28" if i == 2 else ""}"></i>' for i in range(3))
+    cband = "var(--accent)" if tk == "tab" else None
+    cc = (f'<div class="screen">{world}<div class="dim"></div><span class="name">{t["name"]} · result + settings</span>'
+          f'<div class="box{grad}" style="left:60px;top:52px;width:400px;height:{306 - s["shadow"]}px">{stars}'
+          f'<div class="row t{ts}" style="left:0;right:0;top:124px;text-align:center;font-size:30px">+180 coins!</div>'
+          f'<div class="row" style="left:0;right:0;top:166px;text-align:center;color:var(--textSoft);font-size:16px">Top toys: Mo · Last hit: you</div>'
+          f'<div class="btn neu" style="left:24px;bottom:{20 + s["lip"]}px;width:120px;height:52px;font-size:18px"><i class="ph-fill ph-house"></i>Home</div>'
+          f'<div class="btn pri" style="left:160px;right:24px;bottom:{20 + s["lip"]}px;height:52px;font-size:22px"><i class="ph-fill ph-play"></i>Next fort</div></div>'
+          f'{title("Collapse!", 30 if tk != "plain" else 60, cband) if tk != "plain" else ""}'
+          f'<div class="box{grad}" style="left:500px;top:52px;width:290px;height:{306 - s["shadow"]}px">'
+          f'<div class="row t" style="left:22px;top:18px;font-size:24px">Settings</div>'
+          f'<div class="row" style="left:22px;top:74px">Sound</div><div class="sw on" style="right:22px;top:68px"><u></u></div>'
+          f'<div class="row" style="left:22px;top:126px">Reduced motion</div><div class="sw" style="right:22px;top:120px"><u></u></div>'
+          f'<div class="btn dan" style="left:22px;right:22px;bottom:{20 + s["lip"]}px;height:48px;font-size:18px">Reset progress</div></div></div>')
+    wv = f'--worldTop:{t["world"][0]};--worldBottom:{t["world"][1]};--worldGround:{t["world"][2]};--worldProp:{t["world"][3]}'
+    return f'<div style="{css_vars(t)};{wv}">{a}{b}{cc}</div>'
+
+
+def sheet(themes, out, only=None):
+    out = Path(out); out.mkdir(parents=True, exist_ok=True)
+    fams = sorted({FONTS[t["type"][k]] for t in themes for k in ("display", "body")})
+    link = "https://fonts.googleapis.com/css2?" + "&".join("family=" + f.replace(" ", "+") + (":wght@400;600;700;800;900" if f in ("Nunito", "Montserrat", "Nunito Sans", "Oswald", "Merriweather", "Roboto", "Ubuntu", "Josefin Sans", "Grenze Gotisch") else "") for f in fams) + "&display=block"
+    exe = chromium(); made = []
+    for t in themes:
+        if only and t["name"].lower() != only.lower():
+            continue
+        html = (f'<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="{link}">'
+                '<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css">'
+                '<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css">'
+                f'<style>{CSS}</style><body>{screen_html(t)}</body>')
+        with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False) as f:
+            f.write(html)
+        png = out / f'{t["name"].lower().replace(" ", "-")}.png'
+        subprocess.run([exe, "--headless", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=2", "--virtual-time-budget=6000",
+                        "--window-size=844,1198", f"--screenshot={png}", "file://" + f.name], capture_output=True, timeout=120)
+        os.unlink(f.name)
+        made.append(str(png)); print(png)
+    return made
+
+
+def luau(themes):
+    def col(h):
+        h = h.lstrip("#"); return f"Color3.fromRGB({int(h[0:2], 16)}, {int(h[2:4], 16)}, {int(h[4:6], 16)})"
+    o = ["--!strict", "-- Generated by tools/uitheme from ui-themes.json. Edit the JSON, look at the sheet, regenerate.", "local Themes = {}", ""]
+    for t in themes:
+        o.append(f'Themes["{t["name"]}"] = {{')
+        o.append("\tcolor = {")
+        for k, v in t["color"].items():
+            o.append(f"\t\t{k} = {v if not isinstance(v, str) else col(v)},")
+        o.append("\t},\n\trarity = {")
+        for k in RARITY:
+            o.append(f"\t\t{k} = {col(t['rarity'][k])},")
+        o.append("\t},\n\tshape = {")
+        for k, v in t["shape"].items():
+            o.append(f"\t\t{k} = {json.dumps(v)},")
+        ty = t["type"]
+        o.append("\t},\n\ttype = {")
+        o.append(f'\t\tdisplay = Font.new("rbxasset://fonts/families/{ty["display"]}.json", Enum.FontWeight.{"Bold" if ty.get("displayWeight", 400) >= 600 else "Regular"}),')
+        w = {600: "SemiBold", 700: "Bold", 800: "ExtraBold", 900: "Heavy"}[ty["bodyWeight"]]
+        o.append(f'\t\tbody = Font.new("rbxasset://fonts/families/{ty["body"]}.json", Enum.FontWeight.{w}),')
+        o.append(f'\t\tbutton = Font.new("rbxasset://fonts/families/{ty.get("button", ty["display"])}.json", Enum.FontWeight.Bold),')
+        o.append(f'\t\ttitleUpper = {"true" if ty["titleCase"] == "upper" else "false"},')
+        o.append(f'\t\ttextStroke = {ty["textStroke"]},')
+        o.append("\t},\n\tmotion = {")
+        for k, v in t["motion"].items():
+            o.append(f"\t\t{k} = {json.dumps(v)},")
+        o.append("\t},\n}\n")
+    o.append("return Themes\n")
+    return "\n".join(o)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("cmd", choices=["sheet", "luau", "new"])
+    ap.add_argument("args", nargs="*")
+    ap.add_argument("--only"); ap.add_argument("--out"); ap.add_argument("--from", dest="src")
+    a = ap.parse_args()
+    files = [x for x in a.args if x.endswith(".json")]
+    path = Path(files[0]) if files else DEFAULT
+    themes = json.loads(path.read_text())
+    if a.cmd == "sheet":
+        sheet(themes, a.out or "ui-sheets", a.only)
+    elif a.cmd == "luau":
+        text = luau(themes)
+        Path(a.out).write_text(text) if a.out else sys.stdout.write(text)
+    else:
+        name = [x for x in a.args if not x.endswith(".json")][0]
+        src = next(t for t in themes if t["name"].lower() == (a.src or themes[0]["name"]).lower())
+        themes.append(dict(json.loads(json.dumps(src)), name=name))
+        path.write_text(json.dumps(themes, indent=1) + "\n")
+        print(f"added {name} (copy of {src['name']}) to {path}")
+
+
+if __name__ == "__main__":
+    main()

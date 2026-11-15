@@ -1,0 +1,483 @@
+[
+ {
+  "name": "Toybox",
+  "note": "Cream panels, ink outline, chunky lips. Toy, physics and party games.",
+  "color": {
+   "surface": "#FFF9E8",
+   "surfaceAlt": "#EFE4C6",
+   "outline": "#103440",
+   "text": "#103440",
+   "textSoft": "#4A6F7A",
+   "primary": "#B5EA4B",
+   "primaryShade": "#7AB230",
+   "onPrimary": "#103440",
+   "secondary": "#56D6CC",
+   "secondaryShade": "#289696",
+   "onSecondary": "#103440",
+   "danger": "#FF7A84",
+   "dangerShade": "#CE4A5C",
+   "onDanger": "#103440",
+   "accent": "#FFC846",
+   "accentShade": "#D68C1E",
+   "onAccent": "#103440",
+   "muted": "#C9CFC0",
+   "mutedShade": "#A3AA98",
+   "scrim": "#0B2630",
+   "scrimAlpha": 0.5,
+   "toast": "#103440",
+   "onToast": "#C4F25C",
+   "titleBand": "#56D6CC",
+   "onTitleBand": "#103440"
+  },
+  "rarity": {
+   "common": "#8E9AA6",
+   "uncommon": "#4DB84A",
+   "rare": "#3D8BFF",
+   "epic": "#9A5CFF",
+   "legendary": "#F2A20C"
+  },
+  "shape": {
+   "radius": 20,
+   "buttonRadius": 16,
+   "stroke": 3,
+   "lip": 6,
+   "shadow": 6,
+   "shadowAlpha": 0.25,
+   "gradient": 0.18,
+   "title": "tab",
+   "glow": 0
+  },
+  "type": {
+   "display": "FredokaOne",
+   "body": "Nunito",
+   "bodyWeight": 800,
+   "titleCase": "upper",
+   "textStroke": 0
+  },
+  "motion": {
+   "popFrom": 0.8,
+   "popTime": 0.22,
+   "ease": "Back",
+   "press": 0.95
+  },
+  "world": [
+   "#7EC8F2",
+   "#CDEBFA",
+   "#8FD98A",
+   "#F5A3B8"
+  ]
+ },
+ {
+  "name": "Bubblegum",
+  "note": "Saturated blue panels, white outlined text, green and gold buttons. Simulators, pets, collecting.",
+  "color": {
+   "surface": "#3C7BF0",
+   "surfaceTop": "#5AA2FF",
+   "surfaceAlt": "#2A5BD0",
+   "outline": "#0F1C55",
+   "text": "#FFFFFF",
+   "textSoft": "#CFE0FF",
+   "primary": "#57D942",
+   "primaryShade": "#2C9A25",
+   "onPrimary": "#FFFFFF",
+   "secondary": "#FF9F1C",
+   "secondaryShade": "#C96E00",
+   "onSecondary": "#FFFFFF",
+   "danger": "#FF4D6A",
+   "dangerShade": "#BE1F3E",
+   "onDanger": "#FFFFFF",
+   "accent": "#FFD83B",
+   "accentShade": "#D99E00",
+   "onAccent": "#7A4A00",
+   "muted": "#7F93C8",
+   "mutedShade": "#5C6FA6",
+   "scrim": "#081038",
+   "scrimAlpha": 0.6,
+   "toast": "#0F1C55",
+   "onToast": "#FFD83B",
+   "titleBand": "#FF9F1C",
+   "onTitleBand": "#FFFFFF"
+  },
+  "rarity": {
+   "common": "#B8C4D6",
+   "uncommon": "#6BE35A",
+   "rare": "#49C6FF",
+   "epic": "#C77DFF",
+   "legendary": "#FFD83B"
+  },
+  "shape": {
+   "radius": 18,
+   "buttonRadius": 14,
+   "stroke": 3,
+   "lip": 5,
+   "shadow": 6,
+   "shadowAlpha": 0.35,
+   "gradient": 0.3,
+   "title": "banner",
+   "glow": 0
+  },
+  "type": {
+   "display": "TitanOne",
+   "body": "Nunito",
+   "bodyWeight": 900,
+   "titleCase": "upper",
+   "textStroke": 4
+  },
+  "motion": {
+   "popFrom": 0.7,
+   "popTime": 0.25,
+   "ease": "Back",
+   "press": 0.93
+  },
+  "world": [
+   "#58B6FF",
+   "#BFE6FF",
+   "#67D36B",
+   "#FFD35A"
+  ]
+ },
+ {
+  "name": "Garden",
+  "note": "Parchment, dark-brown outline, leaf green and wood. Farming, cosy plots, cooking.",
+  "color": {
+   "surface": "#FBF0D0",
+   "surfaceAlt": "#EBDAA8",
+   "outline": "#3D2A12",
+   "text": "#3D2A12",
+   "textSoft": "#7A6238",
+   "primary": "#6FCB3C",
+   "primaryShade": "#3F8F22",
+   "onPrimary": "#FFFFFF",
+   "secondary": "#F2A63A",
+   "secondaryShade": "#BF7414",
+   "onSecondary": "#3D2A12",
+   "danger": "#E8553E",
+   "dangerShade": "#A9311F",
+   "onDanger": "#FFFFFF",
+   "accent": "#FFD23F",
+   "accentShade": "#C99A10",
+   "onAccent": "#3D2A12",
+   "muted": "#CDBF9A",
+   "mutedShade": "#A89A76",
+   "scrim": "#1E1408",
+   "scrimAlpha": 0.5,
+   "toast": "#3D2A12",
+   "onToast": "#FFE9A6",
+   "titleBand": "#9A6230",
+   "onTitleBand": "#FFF3D6"
+  },
+  "rarity": {
+   "common": "#9C9484",
+   "uncommon": "#58AE3A",
+   "rare": "#3F8FD9",
+   "epic": "#9B59D0",
+   "legendary": "#E9A20F"
+  },
+  "shape": {
+   "radius": 14,
+   "buttonRadius": 12,
+   "stroke": 4,
+   "lip": 6,
+   "shadow": 5,
+   "shadowAlpha": 0.3,
+   "gradient": 0.15,
+   "title": "banner",
+   "glow": 0
+  },
+  "type": {
+   "display": "LuckiestGuy",
+   "body": "Nunito",
+   "bodyWeight": 800,
+   "titleCase": "upper",
+   "textStroke": 0
+  },
+  "motion": {
+   "popFrom": 0.85,
+   "popTime": 0.2,
+   "ease": "Back",
+   "press": 0.95
+  },
+  "world": [
+   "#8FD3F4",
+   "#DDF3E0",
+   "#7CC657",
+   "#B9783F"
+  ]
+ },
+ {
+  "name": "Night Arcade",
+  "note": "Navy panels, thin neon outline with glow, magenta action. Obbies at night, rhythm, sci-fi, tycoons.",
+  "color": {
+   "surface": "#141A36",
+   "surfaceAlt": "#212B55",
+   "outline": "#63EDFF",
+   "text": "#EEF4FF",
+   "textSoft": "#9DB0DD",
+   "primary": "#FF3EC8",
+   "primaryShade": "#A81C82",
+   "onPrimary": "#FFFFFF",
+   "secondary": "#63EDFF",
+   "secondaryShade": "#2A9FB3",
+   "onSecondary": "#07182B",
+   "danger": "#FF5C5C",
+   "dangerShade": "#B32E2E",
+   "onDanger": "#FFFFFF",
+   "accent": "#FFE14D",
+   "accentShade": "#C9A400",
+   "onAccent": "#2A2200",
+   "muted": "#39446E",
+   "mutedShade": "#2A3355",
+   "scrim": "#050818",
+   "scrimAlpha": 0.7,
+   "toast": "#141A36",
+   "onToast": "#63EDFF",
+   "titleBand": "#141A36",
+   "onTitleBand": "#63EDFF"
+  },
+  "rarity": {
+   "common": "#8C9AC0",
+   "uncommon": "#5CFF9D",
+   "rare": "#63EDFF",
+   "epic": "#C77DFF",
+   "legendary": "#FFE14D"
+  },
+  "shape": {
+   "radius": 10,
+   "buttonRadius": 8,
+   "stroke": 2,
+   "lip": 4,
+   "shadow": 0,
+   "shadowAlpha": 0.0,
+   "gradient": 0.12,
+   "title": "plain",
+   "glow": 12
+  },
+  "type": {
+   "display": "Bungee",
+   "body": "Montserrat",
+   "bodyWeight": 700,
+   "titleCase": "upper",
+   "textStroke": 0
+  },
+  "motion": {
+   "popFrom": 0.92,
+   "popTime": 0.14,
+   "ease": "Quad",
+   "press": 0.97
+  },
+  "world": [
+   "#1A1147",
+   "#5B2A86",
+   "#201A3D",
+   "#FF3EC8"
+  ]
+ },
+ {
+  "name": "Cozy",
+  "note": "White panels, no outline, soft shadow, pastel pink and sky. Pets, dress-up, roleplay, home.",
+  "color": {
+   "surface": "#FFFFFF",
+   "surfaceAlt": "#F4F0FF",
+   "outline": "#FFFFFF",
+   "text": "#4B4468",
+   "textSoft": "#8D86A8",
+   "primary": "#FF86B4",
+   "primaryShade": "#E0609A",
+   "onPrimary": "#FFFFFF",
+   "secondary": "#7CCBFF",
+   "secondaryShade": "#4EA6E0",
+   "onSecondary": "#FFFFFF",
+   "danger": "#FF9A86",
+   "dangerShade": "#E0705C",
+   "onDanger": "#FFFFFF",
+   "accent": "#FFD466",
+   "accentShade": "#E5AE2E",
+   "onAccent": "#7A5200",
+   "muted": "#DAD6E8",
+   "mutedShade": "#BDB8D0",
+   "scrim": "#3A3160",
+   "scrimAlpha": 0.4,
+   "toast": "#4B4468",
+   "onToast": "#FFFFFF",
+   "titleBand": "#FF86B4",
+   "onTitleBand": "#FFFFFF"
+  },
+  "rarity": {
+   "common": "#B9B4CC",
+   "uncommon": "#7ED99A",
+   "rare": "#7CCBFF",
+   "epic": "#C39BFF",
+   "legendary": "#FFC94D"
+  },
+  "shape": {
+   "radius": 26,
+   "buttonRadius": 22,
+   "stroke": 3,
+   "lip": 4,
+   "shadow": 8,
+   "shadowAlpha": 0.14,
+   "gradient": 0.0,
+   "title": "plain",
+   "glow": 0
+  },
+  "type": {
+   "display": "FredokaOne",
+   "body": "Nunito",
+   "bodyWeight": 800,
+   "titleCase": "none",
+   "textStroke": 0
+  },
+  "motion": {
+   "popFrom": 0.9,
+   "popTime": 0.28,
+   "ease": "Back",
+   "press": 0.96
+  },
+  "world": [
+   "#BDE3FF",
+   "#FFE9F3",
+   "#BFEAC2",
+   "#FFC2D9"
+  ]
+ },
+ {
+  "name": "Royal",
+  "note": "Slate panels with a gold rule, parchment text. RPG, dungeons, medieval, tower defence.",
+  "color": {
+   "surface": "#2A2E3B",
+   "surfaceTop": "#363B4C",
+   "surfaceAlt": "#3A4052",
+   "outline": "#D8B458",
+   "text": "#F5EAD2",
+   "textSoft": "#B9AE96",
+   "primary": "#D8B458",
+   "primaryShade": "#94762A",
+   "onPrimary": "#2A1E08",
+   "secondary": "#5C7FDB",
+   "secondaryShade": "#34509E",
+   "onSecondary": "#FFFFFF",
+   "danger": "#C94B41",
+   "dangerShade": "#8A2A22",
+   "onDanger": "#FFFFFF",
+   "accent": "#F0CC62",
+   "accentShade": "#A8842C",
+   "onAccent": "#2A1E08",
+   "muted": "#555B6E",
+   "mutedShade": "#3F4453",
+   "scrim": "#0A0C12",
+   "scrimAlpha": 0.7,
+   "toast": "#2A2E3B",
+   "onToast": "#F0CC62",
+   "titleBand": "#7A2630",
+   "onTitleBand": "#F5EAD2"
+  },
+  "rarity": {
+   "common": "#9AA0AE",
+   "uncommon": "#5FBF6A",
+   "rare": "#5C9BFF",
+   "epic": "#B06CFF",
+   "legendary": "#F0A93A"
+  },
+  "shape": {
+   "radius": 8,
+   "buttonRadius": 6,
+   "stroke": 2,
+   "lip": 4,
+   "shadow": 5,
+   "shadowAlpha": 0.45,
+   "gradient": 0.12,
+   "title": "banner",
+   "glow": 0
+  },
+  "type": {
+   "display": "GrenzeGotisch",
+   "displayWeight": 800,
+   "body": "Nunito",
+   "bodyWeight": 700,
+   "titleCase": "none",
+   "textStroke": 0,
+   "button": "Nunito"
+  },
+  "motion": {
+   "popFrom": 0.94,
+   "popTime": 0.18,
+   "ease": "Quad",
+   "press": 0.97
+  },
+  "world": [
+   "#5B6E8C",
+   "#B9C4CF",
+   "#566B4A",
+   "#7D7468"
+  ]
+ },
+ {
+  "name": "Clean",
+  "note": "White, flat, one blue. Roleplay towns, social hangouts, tools where content is the star.",
+  "color": {
+   "surface": "#FFFFFF",
+   "surfaceAlt": "#F0F3F7",
+   "outline": "#DDE3EA",
+   "text": "#1B2430",
+   "textSoft": "#677384",
+   "primary": "#2F7BEA",
+   "primaryShade": "#1F5FC0",
+   "onPrimary": "#FFFFFF",
+   "secondary": "#E9EEF5",
+   "secondaryShade": "#CBD4E0",
+   "onSecondary": "#1B2430",
+   "danger": "#E5484D",
+   "dangerShade": "#B8343A",
+   "onDanger": "#FFFFFF",
+   "accent": "#FFB224",
+   "accentShade": "#D98E00",
+   "onAccent": "#3A2500",
+   "muted": "#D5DBE3",
+   "mutedShade": "#BAC2CD",
+   "scrim": "#0E141C",
+   "scrimAlpha": 0.45,
+   "toast": "#1B2430",
+   "onToast": "#FFFFFF",
+   "titleBand": "#FFFFFF",
+   "onTitleBand": "#1B2430"
+  },
+  "rarity": {
+   "common": "#98A2B0",
+   "uncommon": "#30A46C",
+   "rare": "#2F7BEA",
+   "epic": "#8E4EC6",
+   "legendary": "#F2940C"
+  },
+  "shape": {
+   "radius": 14,
+   "buttonRadius": 12,
+   "stroke": 1,
+   "lip": 0,
+   "shadow": 3,
+   "shadowAlpha": 0.12,
+   "gradient": 0.0,
+   "title": "plain",
+   "glow": 0
+  },
+  "type": {
+   "display": "Montserrat",
+   "displayWeight": 800,
+   "body": "Montserrat",
+   "bodyWeight": 600,
+   "titleCase": "none",
+   "textStroke": 0
+  },
+  "motion": {
+   "popFrom": 0.96,
+   "popTime": 0.16,
+   "ease": "Quad",
+   "press": 0.98
+  },
+  "world": [
+   "#8CC4F0",
+   "#E4F1FA",
+   "#9AA7B2",
+   "#D9B38C"
+  ]
+ }
+]

@@ -155,3 +155,36 @@ CHANGELOG
   rejected Lily Pad Leap's first two UIs; the kit and tour tool were built and tested on that game.
 
 - 2026-11-14: UiKit v2 ported from the shipped toy-siege UI: 844x390 authoring, scale-up/reflow, 16px text / 48px target floors, layered buttons, ribbon panels, image icon configuration, rarity cards, settings switches and reward motion. Small-viewport captures and runtime floor checks reviewed; physical-device play remains a separate check.
+
+## Themes: a bespoke kit is a set of tokens, not new components
+
+Components never name a colour; they ask for a role (`primary`, `surface`, `outline`, `onPrimary`,
+rarity colours). A theme is only tokens: colour roles, shape (radius, button radius, stroke, lip,
+shadow, gradient, title style `tab` / `banner` / `plain`, glow), type (display, body and button
+families from Roblox's built-in fonts, title case, text stroke) and motion (pop scale, time, easing,
+press scale). Seven starting themes live in `templates/project/ui-themes.json`
+(previews: `docs/images/ui-themes-1.jpg`, `ui-themes-2.jpg`):
+
+| Theme | For |
+|---|---|
+| Toybox | toy, physics and party games: cream panels, ink outline, chunky lips |
+| Bubblegum | simulators, pets, collecting: saturated blue panels, outlined white text |
+| Garden | farming, cosy plots, cooking: parchment, brown outline, leaf green and wood |
+| Night Arcade | night obbies, rhythm, sci-fi, tycoons: navy, thin neon outline with glow |
+| Cozy | pets, dress-up, roleplay: white, no outline, soft shadow, pastels |
+| Royal | RPG, dungeons, tower defence: slate, gold rule, blackletter titles only |
+| Clean | towns, social hangouts: white, flat, one blue |
+
+Making one for a new game (do this before any screen is built, after STYLE.md from `visual-craft.md`):
+
+1. `tools/uitheme new "<Game>" --from <nearest theme>` copies a theme into the JSON.
+2. Change tokens to match the game's style bible: the sacred colour becomes `primary` or `accent`,
+   the shape motif sets radius and title style, the world colours set `world`.
+3. `tools/uitheme sheet --only "<Game>" --out shots/ui-theme` renders the HUD, a shop with rarity cards
+   and a result modal at the 844x390 phone reference. Look at it at phone size. Check: every text is
+   legible (16 px floor), the primary button is the loudest thing on each screen, rarity colours are
+   distinct from the primary, decorative display fonts are used for titles only (`type.button` sets a
+   readable button font, as Royal does).
+4. `tools/uitheme luau --out src/shared/Themes.luau` writes the tokens for the Luau kit.
+5. Prefer Roblox's 2026 `UIShadow` (drop, inset for pressed, text shadow) and per-corner radii over
+   stacked frames for lips and shadows (see `visual-craft.md` section 3).
