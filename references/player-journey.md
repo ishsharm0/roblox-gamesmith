@@ -2,6 +2,7 @@
 
 The owner's standing requirements (November 2026). A game is not done until each one passes its check.
 They apply to the design (CONCEPT.md), the build, and every review capture.
+They are the levers for Roblox's key signals (key-signals.md has the mapping and the scorecard).
 
 ## 1. Progression that is rewarding: always something to work toward
 
