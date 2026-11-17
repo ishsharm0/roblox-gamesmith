@@ -1293,13 +1293,32 @@ function Kit.toast(parent: Instance, props: { [string]: any }): Frame
 		ZIndex = 2,
 		Parent = parent,
 	}, { Kit.corner(14), Kit.stroke() })
+	-- With chip art the toast is a light sticker plate with ink text instead of a dark box.
+	local plate = make("ImageLabel", {
+		Name = "Plate",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 1,
+		Visible = false,
+		Parent = frame,
+	})
 	bind(frame, function()
+		local a = roleArt("chip")
 		frame.BackgroundColor3 = active.color.toast
+		frame.BackgroundTransparency = if a then 1 else 0
+		(frame:FindFirstChildOfClass("UIStroke") :: UIStroke).Enabled = a == nil
+		plate.Visible = a ~= nil
+		if a then
+			Kit.applyArt(plate, a)
+		end
 	end)
 	Kit.text(frame, {
 		Text = props.text or "",
 		display = true,
-		role = "onToast",
+		ZIndex = 2,
+		themeColor = function()
+			return if roleArt("chip") then active.color.text else active.color.onToast
+		end,
 		preserveCase = true,
 		TextSize = props.TextSize or 18,
 		Size = UDim2.fromScale(1, 1),
