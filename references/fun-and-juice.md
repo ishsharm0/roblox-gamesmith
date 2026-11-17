@@ -250,3 +250,17 @@ From 48 further talks and devlogs (69 studied in total).
 56. Repetition with variety: about 70/30 to 90/10 by genre; prototype the repeated core with 2-3 testers before variety.
 57. UI sound check: positive, negative or neutral; key sound distinct; heavy low-end only for important screens.
 58. Every press answers: double confirm buttons, a reaction to any input, a skip prompt in cutscenes.
+
+## From the YouTube study, batch 3 (November 2026)
+
+From 51 further talks and devlogs (120 studied in total, 20 per topic).
+
+59. Depth behind gates: the first 5 minutes look as simple as day one after every update; new systems sit behind a level, quest or server tier.
+60. Split unlocks: no level or rebirth step is empty and none dumps more than about 5 (ten at level 6 split into 5 and 5 lifted retention and spend).
+61. Two signals per UI state: colour plus shape, size, motion or sound; check the screenshot in greyscale.
+62. A UI seed: one object or scene (a tavern box, a hextech glow) that every screen, loader and menu answers to; cover the logo and name the world.
+63. Shift the animation, not the hit: an early or late input stretches or speeds the wind-up so the impact still lands on time; never punish an off-beat or late input.
+64. Juice order for a bare prototype: colour, tween and ease, squash and stretch, sound (the cheapest big gain), particles, camera kick opposite the shot, then haptics;
+    pitch-bend repeated sounds a few percent; always ship a screen-shake reduction option.
+65. Show growth against a fixed threat: enemies that outclassed you early become farmable later; loop back to the first area with new gear; a trophy made from the defeated.
+66. Give every loop a rest step (a lull, a bench) and always one clear goal in view; set a new one as the last one nears.

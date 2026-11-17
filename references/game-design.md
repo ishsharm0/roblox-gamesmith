@@ -71,3 +71,11 @@ Add systems (pets, trading, guilds) only when the core loop already retains.
 - `SESSION.md`: the first session minute by minute: spawn, first action, first success, first
   failure, first reward, the moment the player understands the goal.
 - Course or content tables as data in `shared/Config`, so design and code are the same thing.
+
+## From the YouTube study, batch 3 (November 2026)
+
+From 51 further talks and devlogs (120 studied in total, 20 per topic).
+
+- Name the loop by playing for an hour or watching a streamer for an hour; build, schedule, optimise and bug-check it first, cut features outside it when time runs out.
+- Loop versus pillars: the loop is the subset most players meet most of the time, so it must touch every pillar.
+- Support every playstyle in the loop equally; when one is skipped the wheel must not break.

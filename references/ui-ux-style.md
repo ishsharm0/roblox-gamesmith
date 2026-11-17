@@ -279,3 +279,13 @@ From 48 further talks and devlogs (69 studied in total).
 - Cross-platform: design gamepad first; touch hit targets and text readable at phone size (about 60% of minutes).
 - Dark box or vignette behind HUD values so they read over any scene.
 - Shop: main item largest and first, big art, short text, green price button with currency icon.
+
+## From the YouTube study, batch 3 (November 2026)
+
+From 51 further talks and devlogs (120 studied in total, 20 per topic).
+
+- Physical sizes (mobile): touch target 10-15 mm with padding, body about 16-17 pt, captions not under 12 pt; key actions in the thumb zone; add a skip or an experience question to tutorials.
+- UI motion goals: responsiveness, intention, awareness, consistency, physical intuition; polish cannot rescue a design that does not work.
+- Tutorial art stays plain: pretty art with text lost players in a health-regen tutorial until the art was simplified and the text cut.
+- Haptics only with a visual or audio partner. Leave room for two lines in item names (pseudo-localise to test).
+- Inventory is a task menu: reduce swapping (always-open inventory, quick wheel), group items by how they are used, slow or pause time when open in combat on purpose.

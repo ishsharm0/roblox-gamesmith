@@ -93,3 +93,12 @@ From 48 further talks and devlogs (69 studied in total).
 - Requirement 1 check: record a fresh player's first three loops; each names a next desire.
 - Season check: any big update ships economy reset, new mechanic within 5 minutes, new reward system, new builds, endgame, QoL.
 - Older-player check: every screen readable on a phone at arm's length; trading and revive exist before 18+ marketing.
+
+## From the YouTube study, batch 3 (November 2026)
+
+From 51 further talks and devlogs (120 studied in total, 20 per topic).
+
+- Newcomer versus veteran check: after each update the first screen and first goal have not gained a button or a currency; deeper layers are gated.
+- Onboarding learning check: one input at a time, nothing punishing while learning, the key hint shown at the moment it matters (not a banner at the top during combat),
+  loading screens at most 3 items, progress bars accelerate rather than stall.
+- Spike check: before an ad burst or creator push, the build has a day-2, day-5 and day-12 reason to return; compare day-8-to-28 players with day-1 players afterwards.

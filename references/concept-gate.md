@@ -124,3 +124,13 @@ From 48 further talks and devlogs (69 studied in total).
 - A difficulty menu before the first play. Prefer silent tuning: more drops after repeated deaths, a hidden rank, an
   intensity director that backs off.
 - One upgrade or strategy that is best everywhere. Name the situation where each option is the wrong pick.
+
+## From the YouTube study, batch 3 (November 2026)
+
+From 51 further talks and devlogs (120 studied in total, 20 per topic).
+
+- Two promises the best player or plan breaks (a competitive free-for-all that also promises tactics, a showable rare that a flat-price steal can take).
+  Name the pair, then give something up: barrier, gate, carrot (reward the intended play) or s-more (weaken a promise). Record it in CONCEPT.md.
+- Peak mistaken for a base: a pitch with a launch spike and no day-2, day-5 and day-12 reason to return. Animal Hospital fell about 98% from
+  1,273,000 CCU in four months, mostly before any scandal.
+- A clone that changes only 20% outside the verb is a 1-5k CCU plan (one creator's rule); the fantasy or the verb must be new for more.

@@ -177,3 +177,19 @@ Icon guidance: https://create.roblox.com/docs/production/promotion/game-icons
 ## CHANGELOG
 
 - 2026-11-03: New file. Discovery section reflects the June 2026 RFY change (28-day window, PTR + first-play bounce replace QPTR).
+
+## From the YouTube study, batch 3 (November 2026)
+
+From 51 further talks and devlogs (120 studied in total, 20 per topic).
+
+- Experiments: use a control not before-and-after; run the planned 14 days; do not read day one; set a minimum detectable effect; ramp after significance. Results shown:
+  trade lock -5.5% scam reports and revenue +2% (Adopt Me), gamepass popup +10% ARPD (Brookhaven), matchmaking simplification +40% disconnects (rollback),
+  hand-drawn thumbnail 2x qualified play-through, spender tests about a month to reach significance.
+- Events have two jobs: enrichment (more to do, more social, for players with time) and upkeep (light goals for lapsed players); a September upkeep event raised three-month
+  retention of summer returners by 11%; keep about one month on and one off; do not end an event when returners arrive.
+- Returners: catch-up videos covering 3 to 18 months were the sweet spot; keep a legacy option when changing core play.
+- Content cadence packs reuse existing systems (no new currency or one-off mechanic); theme each release; customisation is art-heavy and tech-light; mix permanent and limited items;
+  track fatigue by quest completion and purchases after a release.
+- Peaks decay: Animal Hospital -98% in four months, Grow a Garden about -98% in seven; a weekly update promise you cannot keep sets a bar for decay.
+- Under "Store page": ad launch recipe from one creator (claim): audience all players, 8 credits a day for 2 days, then 16 a day for 2 days, auto reload off, 2-3 thumbnails;
+  stop ads when 50 or more players remain after they end; otherwise run one more campaign.

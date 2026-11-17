@@ -66,3 +66,15 @@ From 48 further talks and devlogs (69 studied in total).
 - Brookhaven benchmark: under 70 USD lifetime spend, about 10% of revenue from the first 30 days; retention funds spend.
 - Judge paid ads by estimated ROAS (100% = a dollar back per dollar); an ad-only audience of low-spend countries lowers ARPPU
   (one case: 100k Robux of ads returned 60k).
+
+## From the YouTube study, batch 3 (November 2026)
+
+From 51 further talks and devlogs (120 studied in total, 20 per topic).
+
+- First offer: 10 players spending 100 Robux is better for health and discovery than 1 spending 1,000 (RDC 2025); price the first purchase to convert fast.
+- Free players can earn the 3x and 5x boosts by watching a rewarded ad when paid players no longer want them, so spenders are not cannibalised.
+- Do not discount often (players wait for sales); do not take a free mechanic and then sell its upgrade as a premium tier: monetise each mechanic from the start.
+- A paid steal or roll that silently fails is a terms-of-service problem; disclose odds. Chest designs that worked: a progress bar that fills every opening, rotating keys that
+  expire at season end; chests opened with the premium currency failed (players valued it too much).
+- Never convert outside money into in-game wealth beyond cosmetics; the economy cannot then be balanced (Cain).
+- Economy words: taps, converters, drains, traders. A rising cost curve stops farming weak targets; a trader needs supply and demand so a buy-sell loop cannot print money.
