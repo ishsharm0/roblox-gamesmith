@@ -46,7 +46,9 @@ HUD counters are a drawn icon + outlined number with no plate.
 ## UiKit v2: shipped phone-first specification
 
 This replaces the older 1100x620 / shrinking-canvas guidance. Author at **844x390**. The root scale is
-`clamp(min(viewportX/844, viewportY/390), 1, 2)`: larger screens scale up, smaller screens reflow at 1.
+`clamp(min(viewportX/refX, viewportY/refY), 1, 1.5)` with ref 844x390 for touch and 1280x640 for mouse and
+keyboard (`Canvas.fit`): a phone layout magnified to fill a laptop reads as "huge" (owner verdict, 2026-11-17).
+Larger screens scale up a little, smaller screens reflow at 1.
 A screen must fit its panels and scroll content to the resulting root; a scale floor alone cannot
 make arbitrary old fixed layouts responsive. Never solve overflow by shrinking text below 16px.
 

@@ -1,0 +1,11 @@
+local Canvas = require("../src/shared/Canvas")
+-- phone keeps the 844x390 canvas; a laptop must not get the phone layout magnified
+assert(Canvas.fit(844, 390, true) == 1)
+assert(math.abs(Canvas.fit(1440, 900, false) - 1.125) < 1e-6)
+assert(Canvas.fit(1920, 1080, false) == 1.5)
+assert(Canvas.fit(3840, 2160, false) == 1.5, "capped at 1.5")
+local s = Canvas.fit(1440, 900, false)
+assert(44 * s / 900 <= 0.06, "a 44 px HUD row over 6% of a 1440x900 window")
+local _, w, h = Canvas.fit(1440, 900, false)
+assert(w == 1280 and h == 800)
+print("PASS: UI canvas per input type")

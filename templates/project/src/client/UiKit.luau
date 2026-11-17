@@ -1,8 +1,12 @@
 --!strict
--- Token-driven UI, authored at 844x390; 16px text and 48px interactive targets never scale down.
+-- Token-driven UI, authored at 844x390 for touch; mouse and keyboard lay out on a 1280x640 canvas so a
+-- laptop does not get the phone layout magnified (Canvas). 16px text and 48px targets never scale down.
 local GuiService = game:GetService("GuiService")
 local TweenService = game:GetService("TweenService")
-local Themes = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared").Themes)
+local UIS = game:GetService("UserInputService")
+local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
+local Themes = require(Shared.Themes)
+local Canvas = require(Shared:WaitForChild("Canvas"))
 local Shadows = require(script.Parent.UiShadow)
 local Kit = {}
 local active: any = Themes.Toybox
@@ -241,6 +245,10 @@ function Kit.tween(
 			:Play()
 	end
 end
+-- Touch-first screens use the phone canvas; a phone with a keyboard attached switches with PreferredInput.
+function Kit.isTouch(): boolean
+	return UIS.PreferredInput == Enum.PreferredInput.Touch
+end
 function Kit.screen(
 	parent: Instance,
 	name: string,
@@ -260,18 +268,35 @@ function Kit.screen(
 		{ Name = "Root", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = gui }
 	)
 	local scale = make("UIScale", { Parent = root })
+	-- ForceViewport / ForceTouch (attributes on the ScreenGui) let a scenario lay the UI out for another screen.
 	local function fit()
-		local v = gui.AbsoluteSize
+		local forced = gui:GetAttribute("ForceViewport")
+		local v = if typeof(forced) == "Vector2" then forced else gui.AbsoluteSize
 		if v.X < 1 then
 			return
 		end
-		local s = math.clamp(math.min(v.X / T.Ref.X, v.Y / T.Ref.Y), 1, 2)
+		local touch = gui:GetAttribute("ForceTouch")
+		if type(touch) ~= "boolean" then
+			touch = Kit.isTouch()
+		end
+		local s, w, h = Canvas.fit(v.X, v.Y, touch :: boolean)
 		scale.Scale = s
-		root.Size = UDim2.fromOffset(v.X / s, v.Y / s)
+		root.Size = UDim2.fromOffset(w, h)
+		gui:SetAttribute("UiScale", s)
 	end
-	local conn = gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit)
+	local conns = {
+		gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit),
+		gui.AttributeChanged:Connect(function(attr)
+			if attr == "ForceViewport" or attr == "ForceTouch" then
+				fit()
+			end
+		end),
+		UIS:GetPropertyChangedSignal("PreferredInput"):Connect(fit),
+	}
 	gui.Destroying:Once(function()
-		conn:Disconnect()
+		for _, conn in conns do
+			conn:Disconnect()
+		end
 	end)
 	fit()
 	task.defer(fit)

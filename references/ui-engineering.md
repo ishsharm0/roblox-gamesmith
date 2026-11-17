@@ -6,18 +6,29 @@ from the project template; it already does most of this.
 
 ## One reference size, one scale
 
-Lay everything out in offset pixels on a fixed reference canvas (the kit uses 844x390), then scale
-the whole root with one `UIScale`:
+Lay everything out in offset pixels on a fixed reference canvas, then scale the whole root with one
+`UIScale`. Touch screens use the 844x390 phone canvas; mouse and keyboard use a larger 1280x640 canvas,
+so a laptop does not get the phone layout magnified (a 1440x900 window at the old `clamp(min(vw/844,
+vh/390), 1, 2)` rule drew everything 1.7x and an owner called it "huge"). The kit's `Canvas.fit` does this:
 
 ```lua
 local function fit()
-	local v = workspace.CurrentCamera.ViewportSize
-	scale.Scale = math.clamp(math.min(v.X / 844, v.Y / 390), 1, 2)
-	root.Size = UDim2.fromOffset(v.X / scale.Scale, v.Y / scale.Scale)
+	local v = gui.AbsoluteSize
+	local touch = UserInputService.PreferredInput == Enum.PreferredInput.Touch
+	local ref = if touch then Vector2.new(844, 390) else Vector2.new(1280, 640)
+	local s = math.clamp(math.min(v.X / ref.X, v.Y / ref.Y), 1, 1.5)
+	scale.Scale = s
+	root.Size = UDim2.fromOffset(v.X / s, v.Y / s)
 end
-workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(fit)
+gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit)
+UserInputService:GetPropertyChangedSignal("PreferredInput"):Connect(fit)
 fit()
 ```
+
+Targets at 1440x900 with a mouse: HUD row at most 6% of the screen height, side buttons at most 5.5%,
+coach cards and callouts at most 7%, a result card at most 45%. Measure them: set the ScreenGui's
+`ForceViewport` (Vector2) and `ForceTouch` attributes, read `AbsoluteSize.Y / viewport.Y` of each element,
+and capture with the device simulator ("iPhone 13", "Average MacBook", "HD 1080").
 
 On a smaller viewport, keep scale 1 and fit/scroll/reflow the content. This preserves the 16px text
 and 48px target floors. When deriving grid columns from AbsoluteSize, divide by the root UIScale
