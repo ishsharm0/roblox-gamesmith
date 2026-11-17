@@ -71,3 +71,11 @@ below is a way of turning a catalogue shot into a moment.
 Put the frame (or a contact sheet) next to a top competitor's. Ask: "If both were in a feed, which
 would a 12-year-old stop on, and why?" If the honest answer is theirs, it is not done. Name the
 missing ingredient from the lists above and add it.
+
+## From the YouTube study (November 2026)
+
+Techniques taken from 21 studied talks and devlogs on Roblox design, retention, loops, UI, monetisation and fun.
+
+- A purchase is a moment: item flies to its slot, the buyer's name flashes server-wide for rare items, others can react.
+  Nothing is bought silently.
+- Cap decoration: at most one pop-up per minute, two visible timers, one pulsing badge. More is slop.

@@ -76,3 +76,12 @@ They are the levers for Roblox's key signals (key-signals.md has the mapping and
 Concept: CONCEPT.md answers all five in writing (concept-gate.md). Build: implement them in the first
 slices, not as polish. Review: every capture sheet and handoff reports the five checks with evidence.
 A game that is clean and working but fails any check is not finished.
+
+## From the YouTube study (November 2026)
+
+Techniques taken from 21 studied talks and devlogs on Roblox design, retention, loops, UI, monetisation and fun.
+
+- Requirement 2 check: for every product in the shop, name the pain it relieves; delete the ones without.
+- Requirement 3 check: two locked things are visible with counts before minute 3.
+- Requirement 4 check: a veteran's flex item is visible within 10 s of spawn.
+- Requirement 1 check: a benchmark event exists by minute 30 and upgrades raise its score.

@@ -261,3 +261,12 @@ corrected modal layering, action positions and native font metrics. Each screen 
 16px text / 48px target / on-screen action / <=100 enabled shadow audit. A separate real input
 probe verified native Inset press, token press scale, lip restoration on release, and the pressed
 appearance. Captures remain external to the repository. The older-build fallback was not exercised.
+
+## From the YouTube study (November 2026)
+
+Techniques taken from 21 studied talks and devlogs on Roblox design, retention, loops, UI, monetisation and fun.
+
+- Currency has a plus button. A failed purchase for lack of currency opens the shop on the third attempt (cap 5 per session).
+- Products sit on the route players walk, not beside the free version; HUD shop icon is one tap.
+- A help icon in the top corner opens a one-screen recap; every system has one NPC that explains it.
+- Onboarding ends with a congratulation, a new unlock and the next goal on the HUD; prompts do not vanish silently.

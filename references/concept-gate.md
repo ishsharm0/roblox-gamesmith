@@ -102,3 +102,15 @@ someone over or say "watch this", can they say the goal in one sentence. Three r
 The one-line formula; the move used and the proven comparables (names, numbers, date checked); the
 verb you changed; the stake; the two or three depth systems and when each first shows; the first 60
 seconds second by second; minute 10; the five-second clip; the biggest build risk; the kill criteria.
+
+## From the YouTube study (November 2026)
+
+Techniques taken from 21 studied talks and devlogs on Roblox design, retention, loops, UI, monetisation and fun.
+
+- A chore with no upside: players walk, wait or collect by hand with nothing new to see, and the plan is to sell a skip.
+  Remove the chore in the design first; sell relief only for what remains. (AFK players are the symptom.)
+- No pain list: no moments written down where a playtester sighs. Every product, boost and pass maps to one pain
+  (effort, loss, missing out, status). Products without a pain are decoration.
+- No locked thing visible by minute 3: the player cannot see what the game grows into.
+
+CONCEPT.md also carries: a pain table (pain | product | price | place on the player's route), two teased locked items with counts, and the weekly hypothesis format "If X then Y because Z".

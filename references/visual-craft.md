@@ -618,3 +618,13 @@ NEVER: 5 bans
 26. Pass the cover-the-logo test: a screenshot must be identifiable as this game without its name.
 27. Ban list: flat fill + default radius + centred title + X as the whole design, system fonts, emoji icons, > 2 fonts, glassmorphism on a toy game.
 
+## From the YouTube study (November 2026)
+
+Techniques taken from 21 studied talks and devlogs on Roblox design, retention, loops, UI, monetisation and fun.
+
+UI code: React Luau with UI Labs stories for components with state (inventory, shop). Animate per-frame values with
+bindings, never state. Keep coins and inventory in a server-fed store outside components.
+VFX rig: one `VfxRig` model in ReplicatedStorage with attachments for each effect; a module clones it onto the character
+and toggles looped effects (aura) and bursts (transform). Aim hit effects by raycast to the exact impact point.
+Sound variety: random PlaybackSpeed between 1.0 and 1.9 on repeating impacts (keep within 0.9-1.2 for voices).
+Authority: the shooter's client plays its own cosmetic impact at once; the server broadcasts the same event to others.

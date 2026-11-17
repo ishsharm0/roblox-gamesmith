@@ -221,3 +221,19 @@ Scene
 
 ---------------------------------------------------------------------
 
+## From the YouTube study (November 2026)
+
+Techniques taken from 21 studied talks and devlogs on Roblox design, retention, loops, UI, monetisation and fun.
+
+41. Remove chores before selling skips: log every walk, wait, menu stretch of 5 s or more; fix, then sell the remainder.
+42. Teasers: show 2-3 locked things with a count ("12 / 25") from the first zone; reveal requirement, not reward.
+43. Benchmark challenge: a 5-minute timed score event every 30 min; tiered reward; every upgrade raises the score.
+44. Steer by reward, not punishment: rest bonus for time away, scoring grade for intended play, drops that restore health.
+45. Hidden novice assist: strengthen the last 20% of ammo, time or health for players on their first 3 tries.
+46. Root cause: when players complain about X, ask what they are doing when it happens; fix that, not X.
+47. Surprise event every 5-15 minutes with a banner (night, storm, boss) so the possibility space stays wide.
+48. Pillars: 3-4 activity types; never the same one for more than 90 s.
+49. Veterans visible: from the new-player zone, show one veteran flex item within 10 s of looking around.
+50. Movement numbers (Celeste): top speed in 6 frames, stop in 3, jump about 3 body heights, high air friction.
+
+Juice checklist addition: a purchase is an event (reveal choreography, a short banner to the server, never silent).
