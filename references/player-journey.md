@@ -85,3 +85,11 @@ Techniques taken from 21 studied talks and devlogs on Roblox design, retention, 
 - Requirement 3 check: two locked things are visible with counts before minute 3.
 - Requirement 4 check: a veteran's flex item is visible within 10 s of spawn.
 - Requirement 1 check: a benchmark event exists by minute 30 and upgrades raise its score.
+
+## From the YouTube study, batch 2 (November 2026)
+
+From 48 further talks and devlogs (69 studied in total).
+
+- Requirement 1 check: record a fresh player's first three loops; each names a next desire.
+- Season check: any big update ships economy reset, new mechanic within 5 minutes, new reward system, new builds, endgame, QoL.
+- Older-player check: every screen readable on a phone at arm's length; trading and revive exist before 18+ marketing.

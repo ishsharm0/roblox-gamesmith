@@ -270,3 +270,12 @@ Techniques taken from 21 studied talks and devlogs on Roblox design, retention, 
 - Products sit on the route players walk, not beside the free version; HUD shop icon is one tap.
 - A help icon in the top corner opens a one-screen recap; every system has one NPC that explains it.
 - Onboarding ends with a congratulation, a new unlock and the next goal on the HUD; prompts do not vanish silently.
+
+## From the YouTube study, batch 2 (November 2026)
+
+From 48 further talks and devlogs (69 studied in total).
+
+- Icons: show a friend the icon; if they guess the meaning it passes.
+- Cross-platform: design gamepad first; touch hit targets and text readable at phone size (about 60% of minutes).
+- Dark box or vignette behind HUD values so they read over any scene.
+- Shop: main item largest and first, big art, short text, green price button with currency icon.

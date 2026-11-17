@@ -56,3 +56,13 @@ retains. A shop added to a boring game makes a boring game with a shop.
   first 10 minutes.
 
 `workflows/audits.md` has the monetization audit; run it before turning on any product.
+
+## From the YouTube study, batch 2 (November 2026)
+
+From 48 further talks and devlogs (69 studied in total).
+
+- Rewarded video is opt-in and, per Roblox data, incremental (viewers are mostly non-spenders); join-with-reward needs no code.
+- Free limited trials of items raised Robux spend and spenders 4% or more in Roblox tests; opt items in.
+- Brookhaven benchmark: under 70 USD lifetime spend, about 10% of revenue from the first 30 days; retention funds spend.
+- Judge paid ads by estimated ROAS (100% = a dollar back per dollar); an ad-only audience of low-spend countries lowers ARPPU
+  (one case: 100k Robux of ads returned 60k).

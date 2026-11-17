@@ -237,3 +237,16 @@ Techniques taken from 21 studied talks and devlogs on Roblox design, retention, 
 50. Movement numbers (Celeste): top speed in 6 frames, stop in 3, jump about 3 body heights, high air friction.
 
 Juice checklist addition: a purchase is an event (reveal choreography, a short banner to the server, never silent).
+
+## From the YouTube study, batch 2 (November 2026)
+
+From 48 further talks and devlogs (69 studied in total).
+
+51. Reward opens the next desire: after every reward a fresh player can say what they want next (Zeigarnik); no maintenance loops.
+52. Praise the player: crowd, announcer or companion reaction on wins, near misses and KOs; confetti on the scorer's KO.
+53. Short loop timeline: first win by 30 s, small win every 30-60 s, peak about 2.5 min, then payoff, score and hook; exit never punished.
+54. Silent adaptive difficulty: after 5 deaths raise ammo/health drops; keep it a drop or spawn change, never a visible cheat.
+55. Power has a cost: opportunity cost, backfire, scarce resource, wind-up commitment or exposure; no first-order optimal plan.
+56. Repetition with variety: about 70/30 to 90/10 by genre; prototype the repeated core with 2-3 testers before variety.
+57. UI sound check: positive, negative or neutral; key sound distinct; heavy low-end only for important screens.
+58. Every press answers: double confirm buttons, a reaction to any input, a skip prompt in cutscenes.

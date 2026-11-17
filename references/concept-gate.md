@@ -114,3 +114,13 @@ Techniques taken from 21 studied talks and devlogs on Roblox design, retention, 
 - No locked thing visible by minute 3: the player cannot see what the game grows into.
 
 CONCEPT.md also carries: a pain table (pain | product | price | place on the player's route), two teased locked items with counts, and the weekly hypothesis format "If X then Y because Z".
+
+## From the YouTube study, batch 2 (November 2026)
+
+From 48 further talks and devlogs (69 studied in total).
+
+- A reward that closes the loop: it says well done and nothing changes. The reward must open a new question or change the
+  next 30 seconds (air 45 s -> 75 s exposes new caves; a pick changes your safe zone).
+- A difficulty menu before the first play. Prefer silent tuning: more drops after repeated deaths, a hidden rank, an
+  intensity director that backs off.
+- One upgrade or strategy that is best everywhere. Name the situation where each option is the wrong pick.
