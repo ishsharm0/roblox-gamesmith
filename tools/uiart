@@ -1,0 +1,1029 @@
+#!/usr/bin/env -S uv run --script --quiet
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["playwright>=1.48", "pillow>=10.1", "numpy>=1.26"]
+# ///
+"""Image-based game UI, made by an agent: a JSON spec -> PNG assets with alpha, 9-slice data, a manifest.
+
+  uiart render  spec.json [--out dir] [--only a,b]   draw every asset, post-process, write manifest.json + sheet.png
+  uiart sheet   manifest.json [--out sheet.png]      contact sheet: every asset on a checkerboard, 9-slices stretched
+  uiart upload  manifest.json [--ids ids.json] [--upload]   preview, then upload new/changed PNGs (rbxcloud, price 0)
+  uiart luau    manifest.json [--ids ids.json] [--out UiArt.luau]    name -> {image, size, slice, sliceScale, content}
+  uiart theme   manifest.json --ids ids.json --themes ui-themes.json --theme Name   write roles into a uitheme theme
+  uiart metrics "Luckiest Guy" ["Fredoka One" ...]   cap-height and width ratios, for sizing labels on plates
+
+Drawing is HTML/CSS/SVG in headless Chromium (Playwright; no window ever opens), so shapes, gradients,
+strokes, inner shadows, SVG filters and real display fonts (Google Fonts) are all available. Pillow then
+trims, pads, outlines, shadows, glows, tints, fits to Roblox's 1024 px limit and bleeds colour into the
+transparent pixels so edges stay clean when Roblox filters the image. Read references/ui-image-assets.md.
+"""
+import argparse, glob, hashlib, html, importlib.machinery, importlib.util, json, math, os, random, re, sys, time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+MAX_SIDE = 1024  # Roblox downsamples anything larger; keep control of the filter ourselves
+TYPES = ("panel", "button", "chip", "bar", "ribbon", "badge", "bunting", "pattern", "backdrop", "title", "icon", "svg", "html")
+
+
+# ---------------------------------------------------------------- spec
+
+def substitute(value, variables):
+    """Replace $name tokens with spec vars, recursively. A whole-string token keeps the var's type."""
+    if isinstance(value, str):
+        m = re.fullmatch(r"\$([A-Za-z_]\w*)", value)
+        if m and m.group(1) in variables:
+            return variables[m.group(1)]
+        return re.sub(r"\$([A-Za-z_]\w*)", lambda m: str(variables.get(m.group(1), m.group(0))), value)
+    if isinstance(value, list):
+        return [substitute(v, variables) for v in value]
+    if isinstance(value, dict):
+        return {k: substitute(v, variables) for k, v in value.items()}
+    return value
+
+
+def load_spec(path):
+    path = Path(path)
+    spec = json.loads(path.read_text())
+    spec["_dir"] = str(path.resolve().parent)
+    return validate(spec)
+
+
+def validate(spec):
+    spec.setdefault("scale", 2)
+    spec.setdefault("vars", {})
+    spec.setdefault("defaults", {})
+    names = set()
+    for a in spec.get("assets", []):
+        n = a.get("name")
+        if not n or not re.fullmatch(r"[A-Za-z][\w-]*", n):
+            raise ValueError(f"asset name must be a plain identifier: {n!r}")
+        if n in names:
+            raise ValueError(f"duplicate asset name {n}")
+        names.add(n)
+        if a.get("type") not in TYPES:
+            raise ValueError(f"{n}: type must be one of {', '.join(TYPES)}")
+        size = a.get("size")
+        if size is not None and (len(size) != 2 or min(size) <= 0):
+            raise ValueError(f"{n}: size is [width, height] in design px")
+        if a["type"] in ("panel", "button", "chip", "bar", "ribbon", "pattern", "backdrop") and size is None:
+            raise ValueError(f"{n}: {a['type']} needs a size")
+    if not 1 <= spec["scale"] <= 4:
+        raise ValueError("scale is the render density, 1-4 (2 = crisp on phones)")
+    return spec
+
+
+def merged(spec, asset):
+    """Type defaults from the spec, then the asset's own params, with $vars substituted."""
+    base = spec["defaults"].get(asset["type"], {})
+    params = {**base.get("params", {}), **asset.get("params", {}), "_dir": spec.get("_dir", ".")}
+    post = asset.get("post", base.get("post", []))
+    return substitute(params, spec["vars"]), substitute(post, spec["vars"])
+
+
+# ---------------------------------------------------------------- drawing helpers (SVG strings)
+
+def _f(x):
+    return f"{x:.2f}".rstrip("0").rstrip(".")
+
+
+def svg(w, h, body, defs=""):
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{_f(w)}" height="{_f(h)}" viewBox="0 0 {_f(w)} {_f(h)}" '
+            f'style="display:block;overflow:visible">' + (f"<defs>{defs}</defs>" if defs else "") + body + "</svg>")
+
+
+def vgrad(gid, top, bottom, mid=None):
+    stops = f'<stop offset="0" stop-color="{top}"/>' + (f'<stop offset=".5" stop-color="{mid}"/>' if mid else "")
+    return f'<linearGradient id="{gid}" x1="0" y1="0" x2="0" y2="1">{stops}<stop offset="1" stop-color="{bottom}"/></linearGradient>'
+
+
+def rrect(x, y, w, h, r, **attrs):
+    r = max(0, min(r, w / 2, h / 2))
+    a = " ".join(f'{k.replace("_", "-")}="{v}"' for k, v in attrs.items())
+    return f'<rect x="{_f(x)}" y="{_f(y)}" width="{_f(w)}" height="{_f(h)}" rx="{_f(r)}" {a}/>'
+
+
+def mix(c1, c2, t):
+    a, b = _rgb(c1), _rgb(c2)
+    return "#" + "".join(f"{round(a[i] + (b[i] - a[i]) * t):02X}" for i in range(3))
+
+
+def _rgb(c):
+    c = c.lstrip("#")
+    if len(c) == 3:
+        c = "".join(ch * 2 for ch in c)
+    return tuple(int(c[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def plate(w, h, p, face_y, lip, gid):
+    """The shared chunky plate: lip under a gradient face, ink outline, gloss band, corner shine."""
+    sw, r = p.get("stroke", 3), p.get("radius", 16)
+    fill = p.get("fill", "#FFC93C")
+    top = p.get("fillTop", mix(fill, "#FFFFFF", p.get("lighten", 0.22)))
+    shade = p.get("shade", mix(fill, "#000000", 0.28))
+    outline = p.get("outline", "#2B1D4A")
+    fh = h - lip - sw
+    body = ""
+    if p.get("drop", 0):
+        body += rrect(sw / 2, sw / 2 + lip + p["drop"], w - sw, fh, r, fill=outline, opacity=p.get("dropAlpha", 0.25))
+    if lip > 0:
+        body += rrect(sw / 2, sw / 2 + lip, w - sw, fh, r, fill=shade, stroke=outline, stroke_width=sw)
+    y0 = sw / 2 + face_y
+    body += rrect(sw / 2, y0, w - sw, fh, r, fill=f"url(#{gid})", stroke=outline, stroke_width=sw)
+    if p.get("bottomShade", 0.12):  # a darker band at the face's foot gives the plate volume
+        body += (f'<clipPath id="{gid}c">{rrect(sw / 2, y0, w - sw, fh, r)}</clipPath>'
+                 f'<rect x="0" y="{_f(y0 + fh * 0.72)}" width="{w}" height="{_f(fh)}" fill="#000000" '
+                 f'opacity="{p.get("bottomShade", 0.12)}" clip-path="url(#{gid}c)"/>'
+                 + rrect(sw / 2, y0, w - sw, fh, r, fill="none", stroke=outline, stroke_width=sw))
+    inner = p.get("innerLine")
+    if inner:
+        i = sw + p.get("innerInset", 4)
+        body += rrect(i, y0 - sw / 2 + i, w - 2 * i, fh - 2 * i + sw, max(2, r - i + 2), fill="none", stroke=inner,
+                      stroke_width=p.get("innerWidth", 2), stroke_dasharray=p.get("innerDash", "none"),
+                      stroke_linecap="round", opacity=p.get("innerAlpha", 1))
+    g = p.get("gloss", 0.38)
+    if g:
+        gi = sw + p.get("glossInset", 5)
+        gh = max(4, (fh - sw) * p.get("glossHeight", 0.3))
+        body += rrect(gi, y0 + sw / 2 + 2, w - 2 * gi, gh, min(r, gh / 2), fill="#FFFFFF", opacity=g)
+    if p.get("shine", True) and r >= 8:
+        body += (f'<ellipse cx="{_f(sw + r * 0.75)}" cy="{_f(y0 + sw / 2 + r * 0.62)}" rx="{_f(r * 0.32)}" '
+                 f'ry="{_f(r * 0.22)}" transform="rotate(-35 {_f(sw + r * 0.75)} {_f(y0 + sw / 2 + r * 0.62)})" fill="#FFFFFF" opacity=".85"/>')
+    return body, vgrad(gid, top, fill, p.get("fillMid"))
+
+
+# ---------------------------------------------------------------- templates: (params, w, h, state) -> (markup, meta)
+
+def t_panel(p, w, h, state=None):
+    """A window frame. Optional `rim` (a coloured band inside the outline, the theme's trim), `face` (the
+    surface inside the rim), `innerLine` (stitch or hairline), `ornaments` (dots fixed in the four corners)."""
+    sw, r, lip = p.get("stroke", 4), p.get("radius", 24), p.get("lip", 8)
+    rim = p.get("rim")
+    p = {"gloss": 0, "shine": False, "fill": rim or "#FFF6E0", "lighten": 0.25 if rim else 0.5, "bottomShade": 0, **p}
+    body, defs = plate(w, h, p, 0, lip, "pg")
+    o = p.get("outline", "#2B1D4A")
+    inset = sw
+    if rim:
+        rw = p.get("rimWidth", 10)
+        inset = sw / 2 + rw
+        face = p.get("face", "#FFF6E0")
+        ir = max(4, r - rw)
+        defs += vgrad("pf", p.get("faceTop", mix(face, "#FFFFFF", 0.5)), face)
+        body += rrect(inset, inset, w - 2 * inset, h - lip - sw - 2 * inset + sw, ir, fill="url(#pf)", stroke=o,
+                      stroke_width=p.get("faceStroke", 2.5))
+        body += rrect(sw / 2 + 3, sw / 2 + 2.5, w - sw - 6, rw * 0.45, rw * 0.22, fill="#FFFFFF", opacity=0.35)
+    for i, c in enumerate(p.get("ornaments", [])[:4]):
+        cx = (sw / 2 + (rim and p.get("rimWidth", 10) / 2 or r * 0.6)) if i in (0, 3) else w - (sw / 2 + (rim and p.get("rimWidth", 10) / 2 or r * 0.6))
+        cy = (sw / 2 + (rim and p.get("rimWidth", 10) / 2 or r * 0.6)) if i in (0, 1) else h - lip - sw / 2 - (rim and p.get("rimWidth", 10) / 2 or r * 0.6)
+        rad = p.get("ornamentSize", 7)
+        body += (f'<circle cx="{_f(cx)}" cy="{_f(cy)}" r="{_f(rad)}" fill="{c}" stroke="{o}" stroke-width="{_f(sw * 0.75)}"/>'
+                 f'<circle cx="{_f(cx - rad * 0.3)}" cy="{_f(cy - rad * 0.35)}" r="{_f(rad * 0.3)}" fill="#FFFFFF" opacity=".8"/>')
+    edge = math.ceil(max(r, inset + p.get("ornamentSize", 0) * 2 if p.get("ornaments") else r) + sw + p.get("sliceMargin", 4))
+    pad = math.ceil(inset + p.get("contentMargin", 8))
+    meta = {"slice": [edge, edge, edge, edge + lip], "content": [pad, pad, pad, lip + pad]}
+    return svg(w, h, body, defs), meta
+
+
+def t_button(p, w, h, state=None):
+    state = state or "rest"
+    sw, r, lip = p.get("stroke", 3), p.get("radius", 16), p.get("lip", 6)
+    pressed_lip = p.get("pressedLip", 2)
+    q = dict(p)
+    if state == "disabled":
+        q.update(fill=p.get("disabledFill", "#C9C2D6"), shade=p.get("disabledShade", "#9C93AE"), gloss=p.get("gloss", 0.38) * 0.4)
+        q.pop("fillTop", None)
+    face_y = lip - pressed_lip if state == "pressed" else 0
+    if state == "pressed":
+        q["fill"] = mix(p.get("fill", "#FFC93C"), "#000000", 0.08)
+        q.pop("fillTop", None)
+    body, defs = plate(w, h, q, face_y, lip, "bg")
+    gloss_end = sw + 2 + max(4, (h - lip - 2 * sw) * q.get("glossHeight", 0.3)) + 2
+    left = math.ceil(r + sw)
+    meta = {"slice": [left, math.ceil(max(r + sw, gloss_end + lip)), left, math.ceil(lip + r + sw)],
+            "content": [sw, sw + face_y, sw, sw + lip - face_y], "state": state}
+    return svg(w, h, body, defs), meta
+
+
+def t_chip(p, w, h, state=None):
+    p = {"radius": h / 2, "lip": 4, "stroke": 3, "gloss": 0.3, "shine": False, "fill": "#FFF6E0", **p}
+    m = t_button(p, w, h, "rest")
+    sw, lip = p["stroke"], p["lip"]
+    edge = math.ceil(min(p["radius"], (h - lip) / 2) + sw)
+    m[1]["slice"] = [edge, math.ceil((h - lip) / 2) - 1, edge, math.floor((h - lip) / 2) + lip - 1]
+    m[1].pop("state")
+    return m
+
+
+def t_bar(p, w, h, state=None):
+    """kind=track: a recessed slot. kind=fill: the glossy liquid that slides along it."""
+    sw = p.get("stroke", 3)
+    r = h / 2
+    if p.get("kind", "track") == "track":
+        fill = p.get("fill", "#2B1D4A")
+        body = rrect(sw / 2, sw / 2, w - sw, h - sw, r - sw / 2, fill=fill, fill_opacity=p.get("alpha", 0.35),
+                     stroke=p.get("outline", "#2B1D4A"), stroke_width=sw)
+        body += rrect(sw + 2, sw + 1, w - 2 * sw - 4, (h - 2 * sw) * 0.35, r, fill="#000000", opacity=0.18)
+        defs = ""
+    else:
+        fill = p.get("fill", "#2EC4D6")
+        body = rrect(0, 0, w, h, r, fill="url(#bf)")
+        body += rrect(r * 0.6, h * 0.14, w - r * 1.2, h * 0.28, h * 0.14, fill="#FFFFFF", opacity=p.get("gloss", 0.45))
+        defs = vgrad("bf", mix(fill, "#FFFFFF", 0.25), mix(fill, "#000000", 0.12))
+    edge = math.ceil(r)
+    return svg(w, h, body, defs), {"slice": [edge, edge - 1, edge, edge - 1]}
+
+
+def t_ribbon(p, w, h, state=None):
+    """A banner with folded tails; stretches horizontally between the tails."""
+    sw, tail = p.get("stroke", 3), p.get("tail", h * 0.55)
+    fill = p.get("fill", "#FF4FA3")
+    shade = p.get("shade", mix(fill, "#000000", 0.3))
+    o = p.get("outline", "#2B1D4A")
+    drop = h * 0.18
+    bh = h - drop - sw
+    ty, th = drop + sw / 2, bh * 0.82
+    notch = tail * 0.45
+
+    def tailpath(x0, x1, flip):
+        xa, xb = (x0, x1)
+        pts = [(xb, ty), (xa, ty), (xa + (notch if not flip else -notch), ty + th / 2), (xa, ty + th), (xb, ty + th)]
+        return " ".join(f"{_f(x)},{_f(y)}" for x, y in pts)
+
+    body = f'<polygon points="{tailpath(sw / 2, tail * 1.3, False)}" fill="{shade}" stroke="{o}" stroke-width="{sw}" stroke-linejoin="round"/>'
+    body += f'<polygon points="{tailpath(w - sw / 2, w - tail * 1.3, True)}" fill="{shade}" stroke="{o}" stroke-width="{sw}" stroke-linejoin="round"/>'
+    body += rrect(tail, sw / 2, w - 2 * tail, bh, p.get("radius", 8), fill="url(#rg)", stroke=o, stroke_width=sw)
+    body += rrect(tail + sw + 4, sw + 3, w - 2 * tail - 2 * sw - 8, bh * 0.22, bh * 0.11, fill="#FFFFFF", opacity=p.get("gloss", 0.35))
+    defs = vgrad("rg", mix(fill, "#FFFFFF", 0.2), fill)
+    edge = math.ceil(tail * 1.3 + sw)
+    return svg(w, h, body, defs), {"slice": [edge, math.floor(h / 2) - 1, edge, math.ceil(h / 2) - 1],
+                                   "content": [math.ceil(tail + sw), sw, math.ceil(tail + sw), math.ceil(drop + sw)]}
+
+
+def star_points(cx, cy, n, r_out, r_in, rot=-90, wobble=0, seed=0):
+    rnd = random.Random(seed)
+    pts = []
+    for i in range(n * 2):
+        ang = math.radians(rot + i * 180 / n)
+        r = (r_out if i % 2 == 0 else r_in) * (1 + rnd.uniform(-wobble, wobble))
+        pts.append((cx + r * math.cos(ang), cy + r * math.sin(ang)))
+    return " ".join(f"{_f(x)},{_f(y)}" for x, y in pts)
+
+
+def t_badge(p, w, h, state=None):
+    """Starburst or round sticker with optional text, for NEW!, x2, SALE."""
+    sw = p.get("stroke", 3)
+    fill = p.get("fill", "#FFC93C")
+    o = p.get("outline", "#2B1D4A")
+    cx, cy = w / 2, h / 2
+    R = min(w, h) / 2 - sw
+    defs = vgrad("bd", mix(fill, "#FFFFFF", 0.3), fill)
+    if p.get("shape", "burst") == "burst":
+        n = p.get("points", 12)
+        body = f'<polygon points="{star_points(cx, cy + 2, n, R, R * p.get("inner", 0.78), wobble=0.04, seed=n)}" fill="{o}" opacity=".35"/>'
+        body += f'<polygon points="{star_points(cx, cy, n, R, R * p.get("inner", 0.78), wobble=0.04, seed=n)}" fill="url(#bd)" stroke="{o}" stroke-width="{sw}" stroke-linejoin="round"/>'
+    else:
+        body = f'<circle cx="{_f(cx)}" cy="{_f(cy)}" r="{_f(R)}" fill="url(#bd)" stroke="{o}" stroke-width="{sw}"/>'
+    text = p.get("text")
+    if text:
+        size = p.get("textSize", R * 0.62)
+        body += (f'<text x="{_f(cx)}" y="{_f(cy + size * 0.36)}" text-anchor="middle" font-family="{p.get("font", "Luckiest Guy")}" '
+                 f'font-size="{_f(size)}" fill="{p.get("textColor", "#FFFFFF")}" stroke="{o}" stroke-width="{_f(size * 0.16)}" '
+                 f'paint-order="stroke" stroke-linejoin="round" transform="rotate({p.get("rotate", -8)} {_f(cx)} {_f(cy)})">{html.escape(text)}</text>')
+    return svg(w, h, body, defs), {}
+
+
+def bunting_svg(width, y, sag, period, flag_w, flag_h, colors, outline, sw, x0=0, seed=0, string="#2B1D4A", wrap=False):
+    rnd = random.Random(seed)
+    n = max(1, round(width / period))
+    out = ""
+    pts = []
+    for i in range(n + 1):
+        pts.append((x0 + i * period, y))
+    d = f"M{_f(pts[0][0])},{_f(y)}"
+    for i in range(n):
+        xm = x0 + (i + 0.5) * period
+        d += f" Q{_f(xm)},{_f(y + sag * 2)} {_f(x0 + (i + 1) * period)},{_f(y)}"
+    out += f'<path d="{d}" fill="none" stroke="{string}" stroke-width="{_f(max(1.5, sw * 0.7))}" stroke-linecap="round"/>'
+    k = 0
+    for i in range(n):
+        for j in range(2):
+            t = 0.3 + 0.4 * j
+            xa = x0 + (i + t) * period
+            # quadratic y on this span
+            yy = y + 2 * sag * 2 * t * (1 - t) * 0.5 * 2
+            ang = (t - 0.5) * 2 * math.degrees(math.atan2(sag * 2, period / 2)) * 0.5 + rnd.uniform(-4, 4)
+            c = colors[k % len(colors)]
+            k += 1
+            tri = f"{_f(xa - flag_w / 2)},{_f(yy)} {_f(xa + flag_w / 2)},{_f(yy)} {_f(xa)},{_f(yy + flag_h)}"
+            out += (f'<g transform="rotate({_f(ang)} {_f(xa)} {_f(yy)})"><polygon points="{tri}" fill="{c}" stroke="{outline}" '
+                    f'stroke-width="{_f(sw)}" stroke-linejoin="round"/>'
+                    f'<polygon points="{_f(xa - flag_w / 2 + sw * 1.5)},{_f(yy + sw)} {_f(xa - flag_w * 0.1)},{_f(yy + sw)} {_f(xa - flag_w * 0.18)},{_f(yy + flag_h * 0.45)}" fill="#FFFFFF" opacity=".35"/></g>')
+    return out
+
+
+def t_bunting(p, w, h, state=None):
+    """A horizontally tiling string of pennants: use with ScaleType.Tile (tile = this width)."""
+    colors = p.get("colors", ["#FF4FA3", "#2EC4D6", "#FFC93C", "#7CD957"])
+    sw = p.get("stroke", 2.5)
+    period = w / max(1, p.get("spans", len(colors) // 2 or 1))
+    body = bunting_svg(w, sw + 2, p.get("sag", h * 0.08), period, p.get("flagWidth", period * 0.36), p.get("flagHeight", h * 0.7),
+                       colors, p.get("outline", "#2B1D4A"), sw, seed=p.get("seed", 3), string=p.get("string", "#2B1D4A"))
+    return svg(w, h, body), {"tile": [w, h]}
+
+
+def scatter(w, h, count, seed, kinds, colors, size, wrap=True, outline=None, sw=0):
+    """Deterministic confetti/candy scatter; with wrap the result tiles seamlessly."""
+    rnd = random.Random(seed)
+    out = ""
+    for i in range(count):
+        x, y = rnd.uniform(0, w), rnd.uniform(0, h)
+        s = size * rnd.uniform(0.7, 1.3)
+        rot = rnd.uniform(0, 360)
+        c = colors[i % len(colors)]
+        kind = kinds[i % len(kinds)]
+        offsets = [(dx, dy) for dx in (-w, 0, w) for dy in (-h, 0, h)] if wrap else [(0, 0)]
+        for dx, dy in offsets:
+            X, Y = x + dx, y + dy
+            if X < -s * 2 or X > w + s * 2 or Y < -s * 2 or Y > h + s * 2:
+                continue
+            st = f' stroke="{outline}" stroke-width="{_f(sw)}"' if outline else ""
+            if kind == "rect":
+                out += f'<rect x="{_f(X - s / 2)}" y="{_f(Y - s / 4)}" width="{_f(s)}" height="{_f(s / 2)}" rx="{_f(s * 0.08)}" fill="{c}"{st} transform="rotate({_f(rot)} {_f(X)} {_f(Y)})"/>'
+            elif kind == "dot":
+                out += f'<circle cx="{_f(X)}" cy="{_f(Y)}" r="{_f(s / 3)}" fill="{c}"{st}/>'
+            elif kind == "squiggle":
+                out += (f'<path d="M{_f(X - s / 2)},{_f(Y)} q{_f(s / 4)},{_f(-s / 3)} {_f(s / 2)},0 t{_f(s / 2)},0" fill="none" stroke="{c}" '
+                        f'stroke-width="{_f(s / 5)}" stroke-linecap="round" transform="rotate({_f(rot)} {_f(X)} {_f(Y)})"/>')
+            elif kind == "star":
+                out += f'<polygon points="{star_points(X, Y, 5, s / 2, s / 4.4, rot=rot)}" fill="{c}"{st} stroke-linejoin="round"/>'
+            elif kind == "candy":
+                out += (f'<g transform="rotate({_f(rot)} {_f(X)} {_f(Y)})"><polygon points="{_f(X - s * .9)},{_f(Y - s * .3)} {_f(X - s * .4)},{_f(Y)} {_f(X - s * .9)},{_f(Y + s * .3)}" fill="{c}"{st}/>'
+                        f'<polygon points="{_f(X + s * .9)},{_f(Y - s * .3)} {_f(X + s * .4)},{_f(Y)} {_f(X + s * .9)},{_f(Y + s * .3)}" fill="{c}"{st}/>'
+                        f'<ellipse cx="{_f(X)}" cy="{_f(Y)}" rx="{_f(s * .48)}" ry="{_f(s * .34)}" fill="{c}"{st}/>'
+                        f'<ellipse cx="{_f(X - s * .12)}" cy="{_f(Y - s * .12)}" rx="{_f(s * .16)}" ry="{_f(s * .08)}" fill="#FFFFFF" opacity=".7"/></g>')
+    return out
+
+
+def t_pattern(p, w, h, state=None):
+    """A seamless tile: confetti, dots or stripes. Use with ScaleType.Tile at low opacity."""
+    kind = p.get("kind", "confetti")
+    colors = p.get("colors", ["#FF4FA3", "#2EC4D6", "#FFC93C", "#7CD957"])
+    bg = p.get("background")
+    body = f'<rect width="{w}" height="{h}" fill="{bg}"/>' if bg else ""
+    if kind == "stripes":
+        sw_ = p.get("stripe", w / 8)
+        for i in range(-4, 9):
+            x = i * w / 4
+            body += f'<polygon points="{_f(x)},0 {_f(x + sw_)},0 {_f(x + sw_ + h)},{h} {_f(x + h)},{h}" fill="{colors[i % len(colors)]}"/>'
+    elif kind == "dots":
+        r = p.get("dot", w / 10)
+        for (x, y) in [(w / 4, h / 4), (3 * w / 4, 3 * h / 4)]:
+            body += f'<circle cx="{_f(x)}" cy="{_f(y)}" r="{_f(r)}" fill="{colors[0]}"/>'
+    else:
+        body += scatter(w, h, p.get("count", 14), p.get("seed", 1), p.get("kinds", ["rect", "squiggle", "dot", "star"]), colors,
+                        p.get("pieceSize", w / 9))
+    return svg(w, h, body), {"tile": [w, h]}
+
+
+def t_backdrop(p, w, h, state=None):
+    """A full-screen illustration from layers, back to front."""
+    out, defs = "", ""
+    for i, L in enumerate(p.get("layers", [])):
+        k = L.get("kind")
+        op = L.get("opacity", 1)
+        g = f'<g opacity="{op}">'
+        if k == "gradient":
+            stops = L.get("stops", ["#FFE7F3", "#FFD3EA"])
+            ang = L.get("angle", 90)
+            x2, y2 = 0.5 + 0.5 * math.cos(math.radians(ang)), 0.5 + 0.5 * math.sin(math.radians(ang))
+            defs += (f'<linearGradient id="bg{i}" x1="{_f(1 - x2)}" y1="{_f(1 - y2)}" x2="{_f(x2)}" y2="{_f(y2)}">' +
+                     "".join(f'<stop offset="{_f(j / max(1, len(stops) - 1))}" stop-color="{c}"/>' for j, c in enumerate(stops)) +
+                     "</linearGradient>")
+            g += f'<rect width="{w}" height="{h}" fill="url(#bg{i})"/>'
+        elif k == "radial":
+            defs += (f'<radialGradient id="bg{i}" cx="{L.get("cx", 0.5)}" cy="{L.get("cy", 0.45)}" r="{L.get("r", 0.7)}">'
+                     f'<stop offset="0" stop-color="{L.get("inner", "#FFFFFF")}" stop-opacity="{L.get("innerAlpha", 0.8)}"/>'
+                     f'<stop offset="1" stop-color="{L.get("outer", "#FFFFFF")}" stop-opacity="{L.get("outerAlpha", 0)}"/></radialGradient>')
+            g += f'<rect width="{w}" height="{h}" fill="url(#bg{i})"/>'
+        elif k == "rays":
+            cx, cy = L.get("cx", 0.5) * w, L.get("cy", 0.5) * h
+            n, R = L.get("count", 18), math.hypot(w, h)
+            cols = L.get("colors", ["#FFFFFF"])
+            for j in range(n):
+                a0 = math.radians(L.get("rotate", 0) + j * 360 / n)
+                a1 = a0 + math.radians(360 / n * L.get("width", 0.5))
+                g += (f'<polygon points="{_f(cx)},{_f(cy)} {_f(cx + R * math.cos(a0))},{_f(cy + R * math.sin(a0))} '
+                      f'{_f(cx + R * math.cos(a1))},{_f(cy + R * math.sin(a1))}" fill="{cols[j % len(cols)]}"/>')
+        elif k == "bunting":
+            g += bunting_svg(w + 200, L.get("y", 0.1) * h, L.get("sag", 18), L.get("period", 180), L.get("flagWidth", 54),
+                             L.get("flagHeight", 60), L.get("colors", ["#FF4FA3", "#2EC4D6", "#FFC93C", "#7CD957"]),
+                             L.get("outline", "#2B1D4A"), L.get("stroke", 3), x0=L.get("x0", -60), seed=L.get("seed", i),
+                             string=L.get("string", "#2B1D4A"))
+        elif k == "scatter":
+            g += scatter(w, h, L.get("count", 60), L.get("seed", i), L.get("kinds", ["rect", "squiggle", "dot", "star"]),
+                         L.get("colors", ["#FF4FA3", "#2EC4D6", "#FFC93C", "#7CD957"]), L.get("size", 16), wrap=False,
+                         outline=L.get("outline"), sw=L.get("stroke", 0))
+        elif k == "balloons":
+            rnd = random.Random(L.get("seed", i))
+            for j, (bx, by, s) in enumerate(L.get("items", [])):
+                c = L.get("colors", ["#FF4FA3", "#2EC4D6", "#FFC93C"])[j % len(L.get("colors", [1, 2, 3]))]
+                X, Y, S = bx * w, by * h, s
+                o = L.get("outline", "#2B1D4A")
+                g += (f'<path d="M{_f(X)},{_f(Y + S * 0.62)} q{_f(rnd.uniform(-12, 12))},{_f(S * 0.6)} {_f(rnd.uniform(-6, 6))},{_f(S * 1.4)}" '
+                      f'fill="none" stroke="{o}" stroke-width="2.5"/>'
+                      f'<ellipse cx="{_f(X)}" cy="{_f(Y)}" rx="{_f(S * 0.5)}" ry="{_f(S * 0.6)}" fill="{c}" stroke="{o}" stroke-width="4"/>'
+                      f'<polygon points="{_f(X - 6)},{_f(Y + S * 0.66)} {_f(X + 6)},{_f(Y + S * 0.66)} {_f(X)},{_f(Y + S * 0.56)}" fill="{c}" stroke="{o}" stroke-width="3" stroke-linejoin="round"/>'
+                      f'<ellipse cx="{_f(X - S * 0.18)}" cy="{_f(Y - S * 0.24)}" rx="{_f(S * 0.1)}" ry="{_f(S * 0.17)}" fill="#FFFFFF" opacity=".7" transform="rotate(25 {_f(X - S * 0.18)} {_f(Y - S * 0.24)})"/>')
+        elif k == "hills":
+            y0 = L.get("y", 0.8) * h
+            amp = L.get("amp", 24)
+            d = f"M0,{h} L0,{_f(y0)}"
+            for j in range(1, 9):
+                d += f" Q{_f(w * (j - 0.5) / 8)},{_f(y0 - amp * (1 if j % 2 else -0.4))} {_f(w * j / 8)},{_f(y0)}"
+            d += f" L{w},{h} Z"
+            g += f'<path d="{d}" fill="{L.get("fill", "#7CD957")}" stroke="{L.get("outline", "none")}" stroke-width="{L.get("stroke", 0)}"/>'
+        elif k == "image":
+            src = L["src"]
+            g += (f'<image href="{html.escape(src)}" x="{_f(L.get("x", 0) * w)}" y="{_f(L.get("y", 0) * h)}" '
+                  f'width="{_f(L.get("w", 1) * w)}" height="{_f(L.get("h", 1) * h)}" preserveAspectRatio="{L.get("fit", "xMidYMid meet")}"/>')
+        elif k == "svg":
+            g += L["svg"]
+        elif k == "vignette":
+            defs += (f'<radialGradient id="bg{i}" cx=".5" cy=".5" r=".75"><stop offset=".55" stop-color="{L.get("color", "#2B1D4A")}" stop-opacity="0"/>'
+                     f'<stop offset="1" stop-color="{L.get("color", "#2B1D4A")}" stop-opacity="{L.get("strength", 0.45)}"/></radialGradient>')
+            g += f'<rect width="{w}" height="{h}" fill="url(#bg{i})"/>'
+        else:
+            raise ValueError(f"backdrop layer kind {k!r} unknown")
+        out += g + "</g>"
+    return svg(w, h, out, defs), {}
+
+
+def t_title(p, w=None, h=None, state=None):
+    """Text art: chunky display type with outline, extruded lip, gradient fill, optional second rim, rotation."""
+    text = html.escape(p.get("text", "TITLE")).replace("\\n", "<br>")
+    size = p.get("size", 64)
+    font = p.get("font", "Luckiest Guy")
+    weight = p.get("weight", 400)
+    ink = p.get("outline", "#2B1D4A")
+    sw = p.get("stroke", size * 0.11)
+    depth = p.get("extrude", size * 0.09)
+    top, bottom = p.get("fillTop", "#FFFFFF"), p.get("fill", "#FFE14D")
+    rim = p.get("rim")  # an outer second outline, e.g. white sticker edge
+    rim_w = p.get("rimWidth", sw * 0.8)
+    track = p.get("tracking", 0.02)
+    line = p.get("lineHeight", 1.0)
+    common = (f"font-family:'{font}';font-weight:{weight};font-size:{size}px;line-height:{line};letter-spacing:{track}em;"
+              f"white-space:nowrap;text-align:center;")
+    shadow = ",".join(f"0 {_f(i * 0.5)}px 0 {ink}" for i in range(1, int(depth * 2) + 1))
+    layers = []
+    if rim:
+        rshadow = ",".join(f"0 {_f(i * 0.5)}px 0 {rim}" for i in range(1, int(depth * 2) + 1))
+        layers.append(f'<div style="{common}position:absolute;inset:0;color:{rim};-webkit-text-stroke:{_f((sw + rim_w) * 2)}px {rim};text-shadow:{rshadow}">{text}</div>')
+    layers.append(f'<div style="{common}position:absolute;inset:0;color:{ink};-webkit-text-stroke:{_f(sw * 2)}px {ink};text-shadow:{shadow}">{text}</div>')
+    if p.get("pattern") == "stripes":
+        bgimg = (f"repeating-linear-gradient(-55deg,{bottom} 0 {size * .14}px,{p.get('stripe', '#FFFFFF')} {size * .14}px {size * .22}px)")
+    else:
+        bgimg = f"linear-gradient(180deg,{top} 0%,{top} {p.get('split', 42)}%,{bottom} {p.get('split', 42) + 6}%,{bottom} 100%)"
+    layers.append(f'<div style="{common}position:absolute;inset:0;background:{bgimg};-webkit-background-clip:text;background-clip:text;color:transparent">{text}</div>')
+    hl = p.get("highlight", 0.55)
+    if hl:
+        layers.append(f'<div style="{common}position:absolute;inset:0;color:transparent;-webkit-text-stroke:{_f(max(1, size * 0.018))}px rgba(255,255,255,{hl});'
+                      f'clip-path:inset(0 0 58% 0);transform:translate({_f(-size * 0.012)}px,{_f(-size * 0.012)}px)">{text}</div>')
+    pad = math.ceil(sw * 2 + depth + (rim_w * 2 if rim else 0) + size * 0.15)
+    inner = f'<div style="{common}position:relative;visibility:visible;color:transparent">{text}' + "".join(layers) + "</div>"
+    markup = (f'<div style="display:inline-block;padding:{pad}px"><div style="display:inline-block;transform:rotate({p.get("rotate", -3)}deg) '
+              f'skewX({p.get("skew", 0)}deg)">{inner}</div></div>')
+    return markup, {}
+
+
+def t_icon(p, w, h, state=None):
+    """Hand-drawn icon: `file` (an .svg, relative to the spec) or `svg` (inner markup) + `viewBox`.
+    A uniform ink outline and drop shadow usually come from post ops, so every icon shares one weight."""
+    if p.get("file"):
+        text = Path(p["_dir"], p["file"]).read_text()
+        text = re.sub(r"<\?xml[^>]*>", "", text).strip()
+        text = re.sub(r"<svg\b", f'<svg width="{w}" height="{h}" style="display:block;overflow:visible"', text, count=1)
+        return text, {}
+    vb = p.get("viewBox", f"0 0 {w} {h}")
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="{vb}" style="display:block;overflow:visible">'
+            f'{p.get("defs", "") and "<defs>" + p["defs"] + "</defs>"}{p.get("svg", "")}</svg>'), {}
+
+
+def t_svg(p, w, h, state=None):
+    return t_icon(p, w, h, state)
+
+
+def t_html(p, w, h, state=None):
+    return p.get("html", ""), {}
+
+
+TEMPLATES = {"panel": t_panel, "button": t_button, "chip": t_chip, "bar": t_bar, "ribbon": t_ribbon, "badge": t_badge,
+             "bunting": t_bunting, "pattern": t_pattern, "backdrop": t_backdrop, "title": t_title, "icon": t_icon, "svg": t_svg,
+             "html": t_html}
+
+
+def expand(spec, asset):
+    """One asset -> one job per state. Buttons default to rest/pressed/disabled."""
+    params, post = merged(spec, asset)
+    kind = asset["type"]
+    states = asset.get("states", ["rest", "pressed", "disabled"] if kind == "button" else [None])
+    w, h = asset.get("size") or (None, None)
+    jobs = []
+    for s in states:
+        markup, meta = TEMPLATES[kind](params, w, h, s)
+        if "nine" in asset:  # explicit slice wins over the template's computed one
+            meta["slice"] = asset["nine"]
+        if "content" in asset:
+            meta["content"] = asset["content"]
+        name = asset["name"] if s in (None, "rest") else f'{asset["name"]}-{s}'
+        role = asset.get("role")
+        if role and s not in (None, "rest"):
+            role = role + s.capitalize()
+        jobs.append({"name": name, "type": kind, "markup": markup, "size": [w, h] if w else None, "post": post,
+                     "meta": meta, "role": role, "use": asset.get("use", ""), "group": asset["name"],
+                     "scale": asset.get("scale", spec["scale"])})
+    return jobs
+
+
+# ---------------------------------------------------------------- post-processing (Pillow)
+
+def _pil():
+    from PIL import Image, ImageChops, ImageFilter
+    return Image, ImageChops, ImageFilter
+
+
+def _color(c, alpha=255):
+    r, g, b = _rgb(c)
+    return (r, g, b, alpha)
+
+
+def expand_canvas(img, l, t, r, b, margins):
+    Image, _, _ = _pil()
+    if not any((l, t, r, b)):
+        return img
+    out = Image.new("RGBA", (img.width + l + r, img.height + t + b), (0, 0, 0, 0))
+    out.paste(img, (l, t))
+    margins[0] += l; margins[1] += t; margins[2] += r; margins[3] += b
+    return out
+
+
+def dilate(alpha, px):
+    _, _, ImageFilter = _pil()
+    a = alpha
+    steps = max(1, round(px))
+    for _ in range(steps):  # repeated 3x3 max approximates a round brush better than one big square
+        a = a.filter(ImageFilter.MaxFilter(3))
+    return a
+
+
+def apply_post(img, ops, scale, margins):
+    """margins tracks pixels added (+) or removed (-) at l,t,r,b so 9-slice rects stay correct."""
+    Image, ImageChops, ImageFilter = _pil()
+    for op in ops:
+        kind = op["op"]
+        if kind == "trim":
+            box = img.getchannel("A").point(lambda v: 255 if v > op.get("threshold", 2) else 0).getbbox()
+            if box:
+                l, t, r, b = box
+                margins[0] -= l; margins[1] -= t; margins[2] -= img.width - r; margins[3] -= img.height - b
+                img = img.crop(box)
+        elif kind == "pad":
+            n = round(op.get("px", 4) * scale)
+            img = expand_canvas(img, n, n, n, n, margins)
+        elif kind == "outline":
+            n = op.get("px", 3) * scale
+            img = expand_canvas(img, math.ceil(n) + 1, math.ceil(n) + 1, math.ceil(n) + 1, math.ceil(n) + 1, margins)
+            a = dilate(img.getchannel("A").point(lambda v: 255 if v > 24 else 0), n).filter(ImageFilter.GaussianBlur(0.6))
+            layer = Image.new("RGBA", img.size, _color(op.get("color", "#2B1D4A")))
+            layer.putalpha(a)
+            img = Image.alpha_composite(layer, img)
+        elif kind in ("shadow", "glow"):
+            dx, dy = op.get("x", 0) * scale, op.get("y", 4 if kind == "shadow" else 0) * scale
+            blur = op.get("blur", 0 if kind == "shadow" else 8) * scale
+            spread = op.get("spread", 0 if kind == "shadow" else 2) * scale
+            m = math.ceil(blur * 2 + spread + max(abs(dx), abs(dy))) + 1
+            img = expand_canvas(img, m, m, m, m, margins)
+            a = img.getchannel("A")
+            if spread:
+                a = dilate(a, spread)
+            if blur:
+                a = a.filter(ImageFilter.GaussianBlur(blur))
+            alpha = op.get("alpha", 0.35 if kind == "shadow" else 0.8)
+            a = a.point(lambda v: round(v * alpha))
+            layer = Image.new("RGBA", img.size, _color(op.get("color", "#2B1D4A")))
+            layer.putalpha(ImageChops.offset(a, round(dx), round(dy)))
+            img = Image.alpha_composite(layer, img)
+        elif kind == "tint":
+            r, g, b = _rgb(op["color"])
+            amt = op.get("amount", 1.0)
+            px = img.load()
+            for y in range(img.height):
+                for x in range(img.width):
+                    pr, pg, pb, pa = px[x, y]
+                    if pa:
+                        px[x, y] = (round(pr + (pr * r / 255 - pr) * amt), round(pg + (pg * g / 255 - pg) * amt),
+                                    round(pb + (pb * b / 255 - pb) * amt), pa)
+        elif kind == "opacity":
+            a = img.getchannel("A").point(lambda v: round(v * op.get("value", 1)))
+            img.putalpha(a)
+        elif kind == "fit":
+            mw, mh = op.get("max", [MAX_SIDE, MAX_SIDE]) if isinstance(op.get("max"), list) else (op.get("max", MAX_SIDE),) * 2
+            img = fit(img, mw * scale if op.get("design") else mw, mh * scale if op.get("design") else mh, margins)
+        else:
+            raise ValueError(f"unknown post op {kind}")
+    return img
+
+
+def fit(img, mw, mh, margins=None):
+    Image, _, _ = _pil()
+    f = min(1, mw / img.width, mh / img.height)
+    if f >= 1:
+        return img
+    size = (max(1, round(img.width * f)), max(1, round(img.height * f)))
+    if margins is not None:
+        for i in range(4):
+            margins[i] = margins[i] * f
+        if len(margins) > 4:
+            margins[4] *= f
+    return img.resize(size, Image.LANCZOS)
+
+
+def alpha_bleed(img, steps=24):
+    """Give fully transparent pixels the colour of their nearest visible neighbours (Tarmac/asphalt do the same),
+    so bilinear filtering in Roblox doesn't pull dark fringes into soft or scaled edges. Alpha is unchanged."""
+    import numpy as np
+    Image, _, _ = _pil()
+    arr = np.array(img.convert("RGBA"), dtype=np.float32)
+    rgb, a = arr[..., :3], arr[..., 3]
+    filled = a > 0
+    if filled.all() or not filled.any():
+        return img
+    out = rgb * filled[..., None]
+    have = filled.astype(np.float32)
+    for _ in range(steps):
+        if have.all():
+            break
+        pad_c = np.pad(out, ((1, 1), (1, 1), (0, 0)))
+        pad_h = np.pad(have, 1)
+        acc = np.zeros_like(out)
+        cnt = np.zeros_like(have)
+        for dy in (0, 1, 2):
+            for dx in (0, 1, 2):
+                if dx == 1 and dy == 1:
+                    continue
+                acc += pad_c[dy:dy + out.shape[0], dx:dx + out.shape[1]]
+                cnt += pad_h[dy:dy + have.shape[0], dx:dx + have.shape[1]]
+        new = (have == 0) & (cnt > 0)
+        out[new] = acc[new] / cnt[new][:, None]
+        have = np.where(new, 1.0, have)
+    if not have.all():
+        out[have == 0] = rgb[filled].mean(axis=0)
+    res = np.dstack([np.where(filled[..., None], rgb, out), a]).clip(0, 255).astype(np.uint8)
+    return Image.fromarray(res, "RGBA")
+
+
+def nine_stretch(img, rect, size):
+    """Draw a 9-slice the way Roblox does (corners fixed, edges and centre stretched). rect = x0,y0,x1,y1 px."""
+    Image, _, _ = _pil()
+    x0, y0, x1, y1 = rect
+    W, H = img.size
+    tw, th = size
+    tw, th = max(tw, x0 + W - x1), max(th, y0 + H - y1)
+    out = Image.new("RGBA", (tw, th), (0, 0, 0, 0))
+    xs, ys = [0, x0, x1, W], [0, y0, y1, H]
+    txs, tys = [0, x0, tw - (W - x1), tw], [0, y0, th - (H - y1), th]
+    for i in range(3):
+        for j in range(3):
+            box = (xs[i], ys[j], xs[i + 1], ys[j + 1])
+            dw, dh = txs[i + 1] - txs[i], tys[j + 1] - tys[j]
+            if box[2] <= box[0] or box[3] <= box[1] or dw <= 0 or dh <= 0:
+                continue
+            out.paste(img.crop(box).resize((dw, dh), Image.BILINEAR), (txs[i], tys[j]))
+    return out
+
+
+def slice_rect(meta_slice, design_scale, margins, size):
+    """Edge distances (design px, l,t,r,b) -> Roblox SliceCenter Rect (x0,y0,x1,y1) in image px."""
+    l, t, r, b = meta_slice
+    W, H = size
+    x0 = round(l * design_scale + margins[0])
+    y0 = round(t * design_scale + margins[1])
+    x1 = round(W - (r * design_scale + margins[2]))
+    y1 = round(H - (b * design_scale + margins[3]))
+    if x1 <= x0 or y1 <= y0:
+        raise ValueError(f"slice {meta_slice} leaves no stretchable centre in a {W}x{H} image")
+    return [x0, y0, x1, y1]
+
+
+# ---------------------------------------------------------------- rendering (Chromium via Playwright)
+
+def chromium():
+    pats = ["~/Library/Caches/ms-playwright/chromium_headless_shell-*/*/chrome-headless-shell",
+            "~/.cache/ms-playwright/chromium_headless_shell-*/*/chrome-headless-shell"]
+    found = []
+    for pat in pats:
+        found += sorted(glob.glob(os.path.expanduser(pat)))
+    return found[-1] if found else None
+
+
+def page_html(spec):
+    fams = spec.get("fonts", ["Luckiest Guy", "Nunito:800"])
+    q = "&".join("family=" + f.split(":")[0].replace(" ", "+") + (f":wght@{f.split(':')[1]}" if ":" in f else "") for f in fams)
+    font_faces = "".join(f"@font-face{{font-family:'{n}';src:url('file://{Path(spec['_dir'], p).resolve()}')}}"
+                         for n, p in spec.get("fontFiles", {}).items())
+    css_vars = ";".join(f"--{k}:{v}" for k, v in spec["vars"].items() if isinstance(v, (str, int, float)))
+    return (f'<!doctype html><html><head><meta charset="utf-8">'
+            + (f'<link rel="stylesheet" href="https://fonts.googleapis.com/css2?{q}&display=block">' if fams else "")
+            + f"<style>{font_faces}:root{{{css_vars}}}html,body{{margin:0;background:transparent}}"
+              f"#stage{{position:absolute;left:0;top:0}}{spec.get('css', '')}</style></head><body>"
+            + f'<svg width="0" height="0" style="position:absolute"><defs>{substitute(spec.get("defs", ""), spec["vars"])}</defs></svg>'
+            + '<div id="stage"></div></body></html>')
+
+
+def render(spec, out, only=None):
+    from playwright.sync_api import sync_playwright
+    Image, _, _ = _pil()
+    import io
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    jobs = [j for a in spec["assets"] for j in expand(spec, a) if not only or a["name"] in only or j["name"] in only]
+    manifest_path = out / "manifest.json"
+    old = json.loads(manifest_path.read_text()) if manifest_path.exists() and only else {"assets": []}
+    entries = {e["name"]: e for e in old["assets"]}
+    fams = [f.split(":")[0] for f in spec.get("fonts", ["Luckiest Guy", "Nunito:800"])]
+    with sync_playwright() as pw:
+        exe = chromium()
+        browser = pw.chromium.launch(executable_path=exe) if exe else pw.chromium.launch()
+        pages = {}
+        for job in jobs:
+            s = job["scale"]
+            if s not in pages:
+                pg = browser.new_page(device_scale_factor=s, viewport={"width": 2400, "height": 1600})
+                # a real file next to the spec, so relative <img src> and fontFiles resolve (about:blank can't read files)
+                page_file = Path(spec["_dir"], ".uiart-page.html")
+                page_file.write_text(page_html(spec))
+                pg.goto(page_file.resolve().as_uri(), wait_until="networkidle")
+                page_file.unlink()
+                for f in fams:
+                    pg.evaluate("f => document.fonts.load(`400 40px \"${f}\"`)", f)
+                pg.evaluate("document.fonts.ready.then(() => 1)")
+                pages[s] = pg
+            pg = pages[s]
+            style = (f"width:{job['size'][0]}px;height:{job['size'][1]}px" if job["size"] else "display:inline-block")
+            pg.evaluate("([m, st]) => { const s = document.getElementById('stage'); s.setAttribute('style', st); s.innerHTML = m; }",
+                        [job["markup"], style])
+            pg.evaluate("Promise.all([...document.images].map(i => i.decode().catch(() => 0))).then(() => document.fonts.ready).then(() => 1)")
+            png = pg.locator("#stage").screenshot(omit_background=True, animations="disabled")
+            img = Image.open(io.BytesIO(png)).convert("RGBA")
+            margins = [0.0, 0.0, 0.0, 0.0, 1.0]  # px added l,t,r,b and the shrink factor
+            img = apply_post(img, job["post"], s, margins)
+            img = fit(img, MAX_SIDE, MAX_SIDE, margins)
+            img = alpha_bleed(img)
+            path = out / f"{job['name']}.png"
+            img.save(path, optimize=True)
+            entries[job["name"]] = entry_for(job, img, path, margins)
+            print(f"  {job['name']:<28} {img.width}x{img.height}" + (f"  slice {entries[job['name']]['slice']}" if "slice" in entries[job['name']] else ""))
+        browser.close()
+    order = [j["name"] for a in spec["assets"] for j in expand(spec, a)]
+    manifest = {"name": spec.get("name", ""), "scale": spec["scale"],
+                "assets": sorted(entries.values(), key=lambda e: order.index(e["name"]) if e["name"] in order else 1e9)}
+    manifest_path.write_text(json.dumps(manifest, indent=1) + "\n")
+    return manifest
+
+
+def entry_for(job, img, path, margins):
+    """Manifest row. size is design px (what Roblox UI offsets use); slice is image px; sliceScale maps one to the other."""
+    density = job["scale"] * margins[4]
+    W, H = img.size
+    meta = job["meta"]
+    e = {"name": job["name"], "file": path.name, "type": job["type"], "group": job["group"],
+         "size": [round(W / density, 1), round(H / density, 1)], "pixels": [W, H], "density": round(density, 4),
+         "sha256": hashlib.sha256(path.read_bytes()).hexdigest()[:16]}
+    if job["role"]:
+        e["role"] = job["role"]
+    if job["use"]:
+        e["use"] = job["use"]
+    if "slice" in meta:
+        e["slice"] = slice_rect(meta["slice"], density, margins, (W, H))
+        e["sliceScale"] = round(1 / density, 4)
+    if "content" in meta:
+        e["content"] = [round(v + margins[i] / density, 1) for i, v in enumerate(meta["content"])]
+    if "tile" in meta:
+        e["tile"] = meta["tile"]
+    if meta.get("state"):
+        e["state"] = meta["state"]
+    return e
+
+
+# ---------------------------------------------------------------- contact sheet
+
+def contact_sheet(manifest, folder, out, columns=6, cell=220):
+    Image, _, _ = _pil()
+    from PIL import ImageDraw, ImageFont
+    folder = Path(folder)
+    rows = []
+    for e in manifest["assets"]:
+        rows.append((e, Image.open(folder / e["file"]).convert("RGBA")))
+    n = len(rows)
+    cols = min(columns, max(1, n))
+    lines = math.ceil(n / cols)
+    label_h = 40
+    W, H = cols * cell, lines * (cell + label_h)
+    sheet = Image.new("RGBA", (W, H), (40, 34, 56, 255))
+    check = Image.new("RGBA", (cell, cell))
+    d = ImageDraw.Draw(check)
+    for y in range(0, cell, 16):
+        for x in range(0, cell, 16):
+            d.rectangle([x, y, x + 15, y + 15], fill=(236, 232, 240, 255) if (x // 16 + y // 16) % 2 else (208, 202, 216, 255))
+    try:
+        font = ImageFont.load_default(size=15)
+    except TypeError:
+        font = ImageFont.load_default()
+    draw = ImageDraw.Draw(sheet)
+    for i, (e, img) in enumerate(rows):
+        cx, cy = (i % cols) * cell, (i // cols) * (cell + label_h)
+        sheet.paste(check, (cx, cy))
+        show = img
+        if "slice" in e:  # show it stretched wider than drawn: proves the slice holds up
+            w0, h0 = img.size
+            show = nine_stretch(img, e["slice"], (int(w0 * 2.2), int(h0 * 1.3)))
+        elif "tile" in e:
+            tiled = Image.new("RGBA", (img.width * 3, img.height * 2))
+            for tx in range(3):
+                for ty in range(2):
+                    tiled.paste(img, (tx * img.width, ty * img.height))
+            show = tiled
+        f = min((cell - 16) / show.width, (cell - 16) / show.height, 1.5)
+        show = show.resize((max(1, int(show.width * f)), max(1, int(show.height * f))), Image.LANCZOS)
+        sheet.alpha_composite(show, (cx + (cell - show.width) // 2, cy + (cell - show.height) // 2))
+        tag = "9-slice x2.2" if "slice" in e else ("tile 3x2" if "tile" in e else "")
+        draw.text((cx + 6, cy + cell + 3), e["name"], fill=(255, 255, 255, 255), font=font)
+        draw.text((cx + 6, cy + cell + 20), f'{e["pixels"][0]}x{e["pixels"][1]}px {tag}', fill=(190, 180, 210, 255), font=font)
+    sheet = sheet.convert("RGB")
+    sheet.save(out, quality=88) if str(out).endswith(".jpg") else sheet.save(out)
+    return out
+
+
+# ---------------------------------------------------------------- Roblox export
+
+def _ids(path):
+    return json.loads(Path(path).read_text()) if path and Path(path).exists() else {}
+
+
+def art_entry(e, ids):
+    rec = ids.get(e["name"])
+    image = f"rbxassetid://{rec['id']}" if rec and rec.get("id") else ""
+    out = {"image": image, "size": e["size"]}
+    for k in ("slice", "sliceScale", "content", "tile"):
+        if k in e:
+            out[k] = e[k]
+    return out
+
+
+def luau_value(v, indent="\t"):
+    if isinstance(v, str):
+        return json.dumps(v)
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return _f(v) if isinstance(v, float) else str(v)
+    raise TypeError(v)
+
+
+def luau_entry(a):
+    parts = [f"image = {json.dumps(a['image'])}", f"size = Vector2.new({_f(a['size'][0])}, {_f(a['size'][1])})"]
+    if "slice" in a:
+        parts.append("slice = Rect.new({}, {}, {}, {})".format(*a["slice"]))
+        parts.append(f"sliceScale = {_f(a['sliceScale'])}")
+    if "content" in a:
+        parts.append("content = {{ {}, {}, {}, {} }}".format(*(_f(v) for v in a["content"])))
+    if "tile" in a:
+        parts.append(f"tile = Vector2.new({_f(a['tile'][0])}, {_f(a['tile'][1])})")
+    return "{ " + ", ".join(parts) + " }"
+
+
+def luau(manifest, ids):
+    o = ["--!strict", "-- Generated by tools/uiart from the UI art manifest. Re-render and re-export; do not edit.",
+         "-- size is design px (UI offsets), slice is image px (SliceCenter), sliceScale maps one to the other.",
+         "return {"]
+    for e in manifest["assets"]:
+        o.append(f'\t["{e["name"]}"] = {luau_entry(art_entry(e, ids))},')
+    o.append("}")
+    return "\n".join(o) + "\n"
+
+
+def theme_art(manifest, ids):
+    """Role -> art record for a uitheme theme. Only assets that have a role and an uploaded id."""
+    art = {}
+    for e in manifest["assets"]:
+        if e.get("role"):
+            a = art_entry(e, ids)
+            if a["image"]:
+                art[e["role"]] = a
+    return art
+
+
+def load_rbxcloud():
+    loader = importlib.machinery.SourceFileLoader("rbxcloud", str(HERE / "rbxcloud"))
+    spec = importlib.util.spec_from_loader("rbxcloud", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+def upload(manifest, folder, ids_path, really=False, prefix=""):
+    cloud = load_rbxcloud()
+    ids = _ids(ids_path)
+    todo = [e for e in manifest["assets"] if ids.get(e["name"], {}).get("sha256") != e["sha256"]]
+    print(f"{len(todo)} of {len(manifest['assets'])} assets are new or changed (unchanged ones keep their ids)")
+    creator = json.loads((cloud.CONFIG / "creator.json").read_text()) if (cloud.CONFIG / "creator.json").exists() else {}
+    who, group = (creator.get("groupId"), True) if creator.get("groupId") else (creator.get("userId", "1"), False)
+    for e in todo:
+        payload, mime = cloud.manifest(Path(folder) / e["file"], f"{prefix}{e['name']}", e.get("use", "UI art, own work"), who, group)
+        if not really:
+            print(f"  preview {e['file']:<30} {e['pixels'][0]}x{e['pixels'][1]} {payload['assetType']} expectedPrice="
+                  f"{payload['creationContext']['expectedPrice']}")
+            continue
+        data, ctype = cloud.multipart(Path(folder) / e["file"], payload, mime)
+        result = cloud.request(cloud.BASE + "assets", data, ctype)
+        op = result.get("path", "")
+        deadline = time.monotonic() + 120
+        while op and not result.get("done") and time.monotonic() < deadline:
+            time.sleep(2)
+            result = cloud.request(cloud.BASE + cloud.operation_path(op))
+        asset = (result.get("response") or {})
+        aid = asset.get("assetId")
+        state = (asset.get("moderationResult") or {}).get("moderationState", "")
+        ids[e["name"]] = {"id": aid, "sha256": e["sha256"], "operation": op, "moderation": state}
+        Path(ids_path).write_text(json.dumps(ids, indent=1) + "\n")
+        print(f"  uploaded {e['name']:<28} {aid} {state}")
+    if not really and todo:
+        print("Nothing sent. Re-run with --upload to create these assets (free, expectedPrice=0).")
+    return ids
+
+
+# ---------------------------------------------------------------- CLI
+
+def metrics(families):
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as pw:
+        exe = chromium()
+        b = pw.chromium.launch(executable_path=exe) if exe else pw.chromium.launch()
+        pg = b.new_page()
+        q = "&".join("family=" + f.replace(" ", "+") for f in families)
+        pg.set_content(f'<link rel=stylesheet href="https://fonts.googleapis.com/css2?{q}&display=block">', wait_until="networkidle")
+        for f in families:
+            pg.evaluate("f => document.fonts.load(`400 100px \"${f}\"`)", f)
+        rows = pg.evaluate("""fs => fs.map(f => { const c = document.createElement('canvas').getContext('2d');
+            c.font = `400 100px "${f}"`; const h = c.measureText('H'); const w = c.measureText('PLAY');
+            return {family: f, capHeight: +(h.actualBoundingBoxAscent / 100).toFixed(3), playWidth: +(w.width / 100).toFixed(3)}; })""", families)
+        b.close()
+    for r in rows:
+        print(f"{r['family']:<20} cap {r['capHeight']}  'PLAY' width {r['playWidth']} em   "
+              f"text size for a 50% cap on a 46px face: {round(0.5 * 46 / r['capHeight'])}")
+    return rows
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    r = sub.add_parser("render"); r.add_argument("spec"); r.add_argument("--out"); r.add_argument("--only")
+    s = sub.add_parser("sheet"); s.add_argument("manifest"); s.add_argument("--out")
+    u = sub.add_parser("upload"); u.add_argument("manifest"); u.add_argument("--ids"); u.add_argument("--upload", action="store_true")
+    u.add_argument("--prefix", default="")
+    l = sub.add_parser("luau"); l.add_argument("manifest"); l.add_argument("--ids"); l.add_argument("--out")
+    t = sub.add_parser("theme"); t.add_argument("manifest"); t.add_argument("--ids", required=True)
+    t.add_argument("--themes", required=True); t.add_argument("--theme", required=True)
+    m = sub.add_parser("metrics"); m.add_argument("families", nargs="+")
+    a = ap.parse_args(argv)
+    if a.cmd == "render":
+        spec = load_spec(a.spec)
+        out = Path(a.out or Path(a.spec).with_suffix("")).resolve()
+        man = render(spec, out, set(a.only.split(",")) if a.only else None)
+        sheet = contact_sheet(man, out, out / "sheet.jpg")
+        print(f"{len(man['assets'])} assets -> {out}/manifest.json; look at {sheet}")
+    elif a.cmd == "sheet":
+        man = json.loads(Path(a.manifest).read_text())
+        print(contact_sheet(man, Path(a.manifest).parent, a.out or Path(a.manifest).parent / "sheet.jpg"))
+    elif a.cmd == "upload":
+        man = json.loads(Path(a.manifest).read_text())
+        upload(man, Path(a.manifest).parent, a.ids or Path(a.manifest).parent / "ids.json", a.upload, a.prefix)
+    elif a.cmd == "luau":
+        text = luau(json.loads(Path(a.manifest).read_text()), _ids(a.ids or Path(a.manifest).parent / "ids.json"))
+        Path(a.out).write_text(text) if a.out else sys.stdout.write(text)
+    elif a.cmd == "theme":
+        themes = json.loads(Path(a.themes).read_text())
+        theme = next((x for x in themes if x["name"] == a.theme), None)
+        if not theme:
+            sys.exit(f"no theme {a.theme} in {a.themes}")
+        theme["art"] = theme_art(json.loads(Path(a.manifest).read_text()), _ids(a.ids))
+        Path(a.themes).write_text(json.dumps(themes, indent=1) + "\n")
+        print(f"{len(theme['art'])} roles -> {a.theme}.art; now run uitheme luau")
+    elif a.cmd == "metrics":
+        metrics(a.families)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (ValueError, OSError, KeyError) as e:
+        sys.exit(f"uiart: {e}")

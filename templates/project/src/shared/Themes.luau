@@ -56,6 +56,7 @@ Themes["Toybox"] = {
 		buttonScale = 1,
 		titleUpper = true,
 		textStroke = 0,
+		capHeight = 0.749,
 	},
 	motion = {
 		popFrom = 0.8,
@@ -63,6 +64,7 @@ Themes["Toybox"] = {
 		ease = "Back",
 		press = 0.95,
 	},
+	art = {},
 }
 
 Themes["Bubblegum"] = {
@@ -120,6 +122,7 @@ Themes["Bubblegum"] = {
 		buttonScale = 1,
 		titleUpper = true,
 		textStroke = 4,
+		capHeight = 0.749,
 	},
 	motion = {
 		popFrom = 0.7,
@@ -127,6 +130,7 @@ Themes["Bubblegum"] = {
 		ease = "Back",
 		press = 0.93,
 	},
+	art = {},
 }
 
 Themes["Garden"] = {
@@ -183,6 +187,7 @@ Themes["Garden"] = {
 		buttonScale = 1,
 		titleUpper = true,
 		textStroke = 0,
+		capHeight = 0.718,
 	},
 	motion = {
 		popFrom = 0.85,
@@ -190,6 +195,7 @@ Themes["Garden"] = {
 		ease = "Back",
 		press = 0.95,
 	},
+	art = {},
 }
 
 Themes["Night Arcade"] = {
@@ -246,6 +252,7 @@ Themes["Night Arcade"] = {
 		buttonScale = 1,
 		titleUpper = true,
 		textStroke = 0,
+		capHeight = 0.72,
 	},
 	motion = {
 		popFrom = 0.92,
@@ -253,6 +260,7 @@ Themes["Night Arcade"] = {
 		ease = "Quad",
 		press = 0.97,
 	},
+	art = {},
 }
 
 Themes["Cozy"] = {
@@ -309,6 +317,7 @@ Themes["Cozy"] = {
 		buttonScale = 1,
 		titleUpper = false,
 		textStroke = 0,
+		capHeight = 0.749,
 	},
 	motion = {
 		popFrom = 0.9,
@@ -316,6 +325,7 @@ Themes["Cozy"] = {
 		ease = "Back",
 		press = 0.96,
 	},
+	art = {},
 }
 
 Themes["Royal"] = {
@@ -373,6 +383,7 @@ Themes["Royal"] = {
 		buttonScale = 1,
 		titleUpper = false,
 		textStroke = 0,
+		capHeight = 0.714,
 	},
 	motion = {
 		popFrom = 0.94,
@@ -380,6 +391,7 @@ Themes["Royal"] = {
 		ease = "Quad",
 		press = 0.97,
 	},
+	art = {},
 }
 
 Themes["Clean"] = {
@@ -436,6 +448,7 @@ Themes["Clean"] = {
 		buttonScale = 1,
 		titleUpper = false,
 		textStroke = 0,
+		capHeight = 0.72,
 	},
 	motion = {
 		popFrom = 0.96,
@@ -443,6 +456,7 @@ Themes["Clean"] = {
 		ease = "Quad",
 		press = 0.98,
 	},
+	art = {},
 }
 
 return Themes

@@ -92,6 +92,67 @@ local icons: { [string]: string } = {}
 function Kit.configureIcons(map: { [string]: string })
 	icons = table.clone(map)
 end
+
+-- Sizing rules for content-led controls (references/ui-image-assets.md): the label's cap height is half the
+-- visible face, side padding is 0.4 x the button height, icons are 0.6 x the face. 48 px is the target floor.
+Kit.metrics = { button = 52, small = 48, large = 60, cap = 0.5, padX = 0.4, icon = 0.6, gap = 0.16 }
+
+-- Image art. Theme roles (panel, card, buttonPrimary[Pressed|Disabled], chip, barTrack, barFill, ribbon, pattern,
+-- backdrop, close) come from the theme's `art` tokens; anything else (titles, mascots, icon-<kind>, backgrounds)
+-- by name from Kit.configureArt(require(UiArt)). A component with no art for its role draws natively.
+local named: { [string]: any } = {}
+function Kit.configureArt(map: { [string]: any })
+	named = table.clone(map)
+end
+local function roleArt(role: string): any
+	local a = active.art
+	local entry = a and a[role]
+	return if entry and entry.image ~= "" then entry else nil
+end
+function Kit.artFor(name: string): any
+	local entry = named[name] or roleArt(name)
+	return if entry and entry.image ~= "" then entry else nil
+end
+function Kit.applyArt(img: ImageLabel | ImageButton, entry: any)
+	img.Image = entry.image
+	if entry.slice then
+		img.ScaleType = Enum.ScaleType.Slice
+		img.SliceCenter = entry.slice
+		img.SliceScale = entry.sliceScale or 1
+	elseif entry.tile then
+		img.ScaleType = Enum.ScaleType.Tile
+		img.TileSize = UDim2.fromOffset(entry.tile.X, entry.tile.Y)
+	else
+		img.ScaleType = Enum.ScaleType.Fit
+	end
+end
+-- An ImageLabel of a named art piece at its design size (times props.scale), e.g. Kit.art(panel, "mascot-cheer").
+function Kit.art(parent: Instance, name: string, props: { [string]: any }?): ImageLabel?
+	local entry = Kit.artFor(name)
+	if not entry then
+		return nil
+	end
+	local p = props or {}
+	local s = p.scale or 1
+	local img = Kit.make("ImageLabel", {
+		Name = p.Name or name,
+		BackgroundTransparency = 1,
+		Size = p.Size or UDim2.fromOffset(entry.size.X * s, entry.size.Y * s),
+		Position = p.Position or UDim2.new(),
+		AnchorPoint = p.AnchorPoint or Vector2.zero,
+		Rotation = p.Rotation or 0,
+		ZIndex = p.ZIndex or 1,
+		Parent = parent,
+	})
+	Kit.applyArt(img, entry)
+	if p.ScaleType then
+		img.ScaleType = p.ScaleType
+	end
+	return img
+end
+local function capitalise(s: string): string
+	return string.upper(string.sub(s, 1, 1)) .. string.sub(s, 2)
+end
 function Kit.make(class: string, props: { [string]: any }, children: { Instance }?): any
 	local inst = Instance.new(class)
 	for k, v in props do
@@ -146,16 +207,6 @@ local function glow(parent: GuiObject)
 			alpha = 0.25,
 			enabled = active.shape.glow > 0,
 			order = 0,
-		}
-	end)
-end
-local function drop(parent: GuiObject, offset: number?)
-	shadow(parent, "Shadow", function()
-		return {
-			color = Color3.new(),
-			y = offset or active.shape.shadow,
-			alpha = 1 - active.shape.shadowAlpha,
-			enabled = active.shape.shadowAlpha > 0,
 		}
 	end)
 end
@@ -440,6 +491,17 @@ local function fallbackIcon(parent: Instance, kind: string, color: Color3, size:
 end
 
 function Kit.icon(parent: Instance, kind: string, color: Color3, size: number): GuiObject
+	local drawn = not icons[kind] and Kit.artFor("icon-" .. kind)
+	if drawn then
+		-- Full-colour drawn icon: never tinted, so callers that recolour icons skip it (Colored attribute).
+		local img = Kit.art(
+			parent,
+			"icon-" .. kind,
+			{ Name = "Icon_" .. kind, Size = UDim2.fromOffset(size, size) }
+		) :: ImageLabel
+		img:SetAttribute("Colored", true)
+		return img
+	end
 	if not icons[kind] and not icons.info then
 		return fallbackIcon(parent, kind, color, size)
 	end
@@ -463,23 +525,113 @@ function Kit.panel(parent: Instance, props: { [string]: any }): Frame
 		BackgroundTransparency = 1,
 		Parent = parent,
 	})
+	local faceStroke = Kit.stroke()
 	local face = make(
 		"Frame",
 		{ Name = "Face", Size = UDim2.fromScale(1, 1), BorderSizePixel = 0, ZIndex = 2, Parent = holder },
-		{ Kit.corner(props.radius), Kit.stroke() }
+		{ Kit.corner(props.radius), faceStroke }
 	)
+	-- Image frame (9-slice) and a low-opacity surface pattern when the theme has them.
+	local plate = make("ImageLabel", {
+		Name = "Plate",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = -1,
+		Visible = false,
+		Parent = face,
+	})
+	local pattern = make("ImageLabel", {
+		Name = "Pattern",
+		BackgroundTransparency = 1,
+		ImageTransparency = props.patternAlpha or 0.9,
+		ZIndex = 0,
+		Visible = false,
+		Parent = face,
+	})
+	local function frameArt(): any
+		return if props.color == nil and props.plain ~= true then roleArt(props.art or "panel") else nil
+	end
 	bind(face, function()
 		local c = active.color
+		local a = frameArt()
 		gradient(
 			face,
 			c.surfaceTop or c.surface,
 			props.color or c.surface,
 			c.surfaceTop ~= nil and props.color == nil
 		)
+		face.BackgroundTransparency = if a then 1 else 0
+		faceStroke.Enabled = a == nil and active.shape.stroke > 0
+		plate.Visible = a ~= nil
+		if a then
+			Kit.applyArt(plate, a)
+			local inset = a.content or { 12, 12, 12, 12 }
+			face:SetAttribute("Inset", inset[1])
+			local pa = roleArt("pattern")
+			pattern.Visible = pa ~= nil and props.pattern ~= false
+			if pa then
+				Kit.applyArt(pattern, pa)
+				pattern.Position = UDim2.fromOffset(inset[1] - 6, inset[2] - 6)
+				pattern.Size = UDim2.new(1, -(inset[1] + inset[3]) + 12, 1, -(inset[2] + inset[4]) + 12)
+			end
+		else
+			face:SetAttribute("Inset", active.shape.stroke)
+			pattern.Visible = false
+		end
 	end)
-	drop(face)
-	glow(face)
-	if props.title then
+	shadow(face, "Shadow", function()
+		return {
+			color = Color3.new(),
+			y = active.shape.shadow,
+			alpha = 1 - active.shape.shadowAlpha,
+			enabled = active.shape.shadowAlpha > 0 and frameArt() == nil,
+		}
+	end)
+	shadow(face, "Glow", function()
+		return {
+			color = active.color.outline,
+			blur = active.shape.glow,
+			alpha = 0.25,
+			enabled = active.shape.glow > 0 and frameArt() == nil,
+			order = 0,
+		}
+	end)
+	local titleArt = props.titleArt and Kit.artFor(props.titleArt)
+	if titleArt then
+		-- Text-art title on a ribbon that breaks the top edge (the ribbon falls back to a tab when no art).
+		local ribbonArt = Kit.artFor(props.ribbonArt or "ribbon")
+		local side = if ribbonArt and ribbonArt.content then ribbonArt.content[1] else 16
+		local w = titleArt.size.X + side * 2 + 8
+		local h = if ribbonArt then ribbonArt.size.Y else titleArt.size.Y + 8
+		local ribbon = make("ImageLabel", {
+			Name = "Ribbon",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = props.titlePosition or UDim2.new(0.5, 0, 0, 2),
+			Size = UDim2.fromOffset(w, h),
+			BackgroundTransparency = 1,
+			ZIndex = 6,
+			Parent = face,
+		})
+		if ribbonArt then
+			Kit.applyArt(ribbon, ribbonArt)
+		else
+			ribbon.BackgroundTransparency = 0
+			ribbon.BackgroundColor3 = props.headerColor or active.color.titleBand
+			Kit.corner(10).Parent = ribbon
+			Kit.stroke().Parent = ribbon
+		end
+		local bottom = if ribbonArt and ribbonArt.content then ribbonArt.content[4] else 0
+		Kit.art(ribbon, props.titleArt, {
+			Name = "Title",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(0.5, 0, 0.5, -bottom / 2),
+			ZIndex = 7,
+		})
+	end
+	if props.onClose then
+		Kit.closeButton(face, props.onClose)
+	end
+	if props.title and not titleArt then
 		local ribbon = make("Frame", {
 			Name = "Ribbon",
 			AnchorPoint = Vector2.new(0.5, 0),
@@ -555,14 +707,40 @@ function Kit.setButton(btn: TextButton, enabled: boolean, text: string?)
 		end
 	end
 end
+-- Plate art for a button style and state: rest, Pressed, Disabled (falls back to buttonDisabled, then rest).
+local function buttonArt(style: string, enabled: boolean, down: boolean): (any, any)
+	if style == "reward" then
+		style = "accent"
+	end
+	local key = "button" .. capitalise(style)
+	local rest = roleArt(key)
+	if not rest then
+		return nil, nil
+	end
+	if not enabled then
+		return roleArt(key .. "Disabled") or roleArt("buttonDisabled") or rest, rest
+	end
+	return if down then roleArt(key .. "Pressed") or rest else rest, rest
+end
+-- Text size whose cap height is Kit.metrics.cap of the face (plate height minus lip).
+function Kit.labelSize(height: number, lip: number?): number
+	local face = height - (lip or 0)
+	local capRatio = active.type.capHeight or 0.72
+	return math.clamp(math.floor(face * Kit.metrics.cap / capRatio + 0.5), 16, 100)
+end
+-- Buttons hug their content: give `height` (default Kit.metrics.button) and no Size, and the width becomes
+-- label + icon + 0.4 x height of padding on each side. `fill = true` makes a full-width primary. An explicit
+-- Size keeps the old fixed box.
 function Kit.button(parent: Instance, props: { [string]: any }): TextButton
+	local h = props.height or (if props.Size then props.Size.Y.Offset else Kit.metrics.button)
+	local compact = props.Size == nil
 	local btn = make("TextButton", {
 		Name = props.Name or "Button",
 		ZIndex = props.ZIndex or 1,
 		Text = "",
 		AutoButtonColor = false,
 		BackgroundTransparency = 1,
-		Size = props.Size or UDim2.fromOffset(260, 64),
+		Size = props.Size or (if props.fill then UDim2.new(1, 0, 0, h) else UDim2.fromOffset(h * 2, h)),
 		Position = props.Position or UDim2.new(),
 		AnchorPoint = props.AnchorPoint or Vector2.zero,
 		Selectable = true,
@@ -576,10 +754,22 @@ function Kit.button(parent: Instance, props: { [string]: any }): TextButton
 		{ Kit.corner(), Kit.stroke() }
 	)
 	local corner = face:FindFirstChildOfClass("UICorner") :: UICorner
+	local faceStroke = face:FindFirstChildOfClass("UIStroke") :: UIStroke
+	local plate = make("ImageLabel", {
+		Name = "Plate",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 1,
+		Visible = false,
+		Parent = face,
+	})
 	local down = false
 	local function colors()
 		return buttonColors(props.style or "primary", not btn:GetAttribute("Disabled"))
 	end
+	-- Native plates draw their lip below the box; image plates carry it inside, so their face is shorter.
+	local artNow = buttonArt(props.style or "primary", true, false)
+	local lipNow = if artNow and artNow.content then artNow.content[4] - artNow.content[2] else 0
 	local row = make(
 		"Frame",
 		{ Name = "Row", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 3, Parent = face },
@@ -588,15 +778,16 @@ function Kit.button(parent: Instance, props: { [string]: any }): TextButton
 				FillDirection = Enum.FillDirection.Horizontal,
 				HorizontalAlignment = Enum.HorizontalAlignment.Center,
 				VerticalAlignment = Enum.VerticalAlignment.Center,
-				Padding = UDim.new(0, 8),
+				Padding = UDim.new(0, math.max(4, math.floor(h * Kit.metrics.gap))),
 				SortOrder = Enum.SortOrder.LayoutOrder,
 			}),
 		}
 	)
 	local icon: GuiObject? = nil
+	local iconSize = props.iconSize or (if compact then math.floor((h - lipNow) * Kit.metrics.icon) else 28)
 	if props.icon then
 		local _, _, on = colors()
-		icon = Kit.icon(row, props.icon, on, props.iconSize or 28)
+		icon = Kit.icon(row, props.icon, on, iconSize)
 		icon.ZIndex, icon.LayoutOrder = 4, 1
 	end
 	local label: TextLabel? = nil
@@ -604,19 +795,43 @@ function Kit.button(parent: Instance, props: { [string]: any }): TextButton
 		label = Kit.text(row, {
 			Name = "Label",
 			Text = props.text,
-			TextSize = props.TextSize or 28,
+			TextSize = props.TextSize or (if compact or props.autoText then Kit.labelSize(h, lipNow) else 28),
 			button = true,
 			TextWrapped = false,
 			AutomaticSize = Enum.AutomaticSize.X,
 			Size = UDim2.fromScale(0, 1),
 			LayoutOrder = 2,
 			ZIndex = 4,
+			outline = props.outline,
 			themeColor = function()
 				local _, _, on = colors()
 				return on
 			end,
 		})
 	end
+	local function hug()
+		if not compact or props.fill then
+			return
+		end
+		local content = 0
+		local showIcon = icon ~= nil and icon.Visible
+		if showIcon then
+			content += iconSize
+		end
+		if label then
+			content += label.TextBounds.X + (if showIcon
+				then math.max(4, math.floor(h * Kit.metrics.gap))
+				else 0)
+		end
+		btn.Size = UDim2.fromOffset(math.max(h, math.ceil(content + 2 * h * Kit.metrics.padX)), h)
+	end
+	if label then
+		label:GetPropertyChangedSignal("TextBounds"):Connect(hug)
+	end
+	if icon then
+		icon:GetPropertyChangedSignal("Visible"):Connect(hug)
+	end
+	hug()
 	local applyDrop = Shadows.create(face, "Shadow")
 	local applyLipOutline = Shadows.create(face, "LipOutline")
 	local applyLip = Shadows.create(face, "Lip")
@@ -626,13 +841,18 @@ function Kit.button(parent: Instance, props: { [string]: any }): TextButton
 		local fill, shade, on = colors()
 		local s = active.shape
 		local lip = props.lip or s.lip
+		local enabled = not btn:GetAttribute("Disabled")
+		local art, restArt = buttonArt(props.style or "primary", enabled, down)
 		btn:SetAttribute("Fill", fill)
+		btn:SetAttribute("Art", art ~= nil)
 		corner.CornerRadius = UDim.new(0, s.buttonRadius)
 		-- Absolute colour gradient, matching CSS white-mixed top -> untouched token fill.
 		local top = fill:Lerp(Color3.new(1, 1, 1), s.gradient)
 		local g = face:FindFirstChild("ThemeGradient")
 			or make("UIGradient", { Name = "ThemeGradient", Rotation = 90, Parent = face })
 		face.BackgroundColor3 = if down then fill:Lerp(Color3.new(), 0.12) else fill
+		face.BackgroundTransparency = if art then 1 else 0
+		faceStroke.Enabled = art == nil and s.stroke > 0
 		g.Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.new(1, 1, 1))
 		-- UIGradient multiplies its parent's colour, so use the absolute colours on a white Gloss overlay.
 		local gloss = face:FindFirstChild("Gloss")
@@ -649,34 +869,46 @@ function Kit.button(parent: Instance, props: { [string]: any }): TextButton
 		local gg = gloss:FindFirstChildOfClass("UIGradient")
 			or make("UIGradient", { Rotation = 90, Parent = gloss })
 		gg.Color = ColorSequence.new(top, fill)
-		gloss.Visible = s.gradient > 0 and not down and not btn:GetAttribute("Disabled")
+		gloss.Visible = art == nil and s.gradient > 0 and not down and enabled
+		plate.Visible = art ~= nil
+		if art then
+			-- The plate image carries its own lip, stroke and pressed pose; the label rides the face inside it.
+			Kit.applyArt(plate, art)
+			local c = art.content or { 0, 0, 0, lip }
+			local rc = restArt.content or c
+			row.Position = UDim2.fromOffset(c[1], c[2])
+			row.Size = UDim2.new(1, -(c[1] + c[3]), 1, -(rc[2] + rc[4]))
+		else
+			row.Position = UDim2.new()
+			row.Size = UDim2.fromScale(1, 1)
+		end
 		applyDrop({
 			color = Color3.new(),
 			y = lip + s.shadow,
 			alpha = 1 - s.shadowAlpha,
-			enabled = s.shadowAlpha > 0,
+			enabled = art == nil and s.shadowAlpha > 0,
 			order = 0,
 		})
 		applyLipOutline({
 			color = active.color.outline,
 			y = lip + s.stroke,
-			enabled = lip > 0 and s.stroke > 0 and not down,
+			enabled = art == nil and lip > 0 and s.stroke > 0 and not down,
 			order = 1,
 		})
-		applyLip({ color = shade, y = lip, enabled = lip > 0 and not down, order = 2 })
+		applyLip({ color = shade, y = lip, enabled = art == nil and lip > 0 and not down, order = 2 })
 		applyInset({
 			color = Color3.new(),
 			y = 4,
 			blur = 6,
 			alpha = 0.55,
 			inset = true,
-			enabled = down,
+			enabled = art == nil and down,
 			order = 3,
 		})
 		if label then
 			label.TextColor3 = on
 		end
-		if icon then
+		if icon and not icon:GetAttribute("Colored") then
 			for _, child in icon:GetDescendants() do
 				if child:IsA("Frame") then
 					child.BackgroundColor3 = on
@@ -704,12 +936,14 @@ function Kit.button(parent: Instance, props: { [string]: any }): TextButton
 		end
 		down = value
 		update()
-		Kit.tween(face, if value then 0.06 else 0.15, {
-			Position = UDim2.fromOffset(
-				0,
-				if value then math.max(0, (props.lip or active.shape.lip) - 1) else 0
-			),
-		})
+		if not btn:GetAttribute("Art") then
+			Kit.tween(face, if value then 0.06 else 0.15, {
+				Position = UDim2.fromOffset(
+					0,
+					if value then math.max(0, (props.lip or active.shape.lip) - 1) else 0
+				),
+			})
+		end
 		Kit.tween(
 			scale,
 			if value then 0.06 else 0.15,
@@ -779,12 +1013,46 @@ function Kit.pill(parent: Instance, props: { [string]: any }): (Frame, TextLabel
 		ZIndex = 2,
 		Parent = parent,
 	}, { Kit.corner(props.radius or h / 2), Kit.stroke() })
+	-- `bare = true`: no plate at all, just the icon and an outlined number (the HUD rule in top games).
+	local chipPlate = make("ImageLabel", {
+		Name = "Plate",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 0,
+		Visible = false,
+		Parent = frame,
+	})
+	local pillStroke = frame:FindFirstChildOfClass("UIStroke") :: UIStroke
+	local function native(): boolean
+		return not props.bare and roleArt("chip") == nil
+	end
 	bind(frame, function()
 		frame.BackgroundColor3 = props.color or active.color.surface
+		local a = if props.bare then nil else roleArt("chip")
+		frame.BackgroundTransparency = if native() then 0 else 1
+		pillStroke.Enabled = native() and active.shape.stroke > 0
+		chipPlate.Visible = a ~= nil
+		if a then
+			Kit.applyArt(chipPlate, a)
+		end
 	end)
-	drop(frame, 4)
+	shadow(frame, "Shadow", function()
+		return {
+			color = Color3.new(),
+			y = 4,
+			alpha = 1 - active.shape.shadowAlpha,
+			enabled = native() and active.shape.shadowAlpha > 0,
+		}
+	end)
 	glow(frame)
-	if props.icon then
+	if props.icon and props.bare then
+		local ic =
+			Kit.icon(frame, props.icon, props.iconColor or active.color.accent, props.iconSize or h + 4)
+		ic.Name = "Badge"
+		ic.AnchorPoint = Vector2.new(0, 0.5)
+		ic.Position = UDim2.new(0, -4, 0.5, 0)
+		ic.ZIndex = 3
+	elseif props.icon then
 		local badge = make("Frame", {
 			Name = "Badge",
 			Size = UDim2.fromOffset(40, 40),
@@ -798,6 +1066,9 @@ function Kit.pill(parent: Instance, props: { [string]: any }): (Frame, TextLabel
 		bind(badge, function()
 			badge.BackgroundColor3 = props.iconBg or active.color.accent
 			local color = props.iconColor or active.color.onAccent
+			if ic:GetAttribute("Colored") then
+				return
+			end
 			if ic:IsA("ImageLabel") then
 				ic.ImageColor3 = color
 			end
@@ -810,15 +1081,22 @@ function Kit.pill(parent: Instance, props: { [string]: any }): (Frame, TextLabel
 			end
 		end)
 	end
+	local iconRoom = if props.bare and props.icon
+		then (props.iconSize or h + 4) + 2
+		elseif props.icon then 37
+		else 8
 	local label = Kit.text(frame, {
 		Name = "Value",
 		preserveCase = true,
 		Text = props.text or "",
 		TextSize = props.TextSize or 26,
 		display = true,
-		Position = UDim2.fromOffset(if props.icon then 37 else 8, 0),
-		Size = UDim2.new(1, if props.icon then -45 else -16, 1, 0),
+		Position = UDim2.fromOffset(iconRoom, 0),
+		Size = UDim2.new(1, -iconRoom - 8, 1, 0),
+		TextXAlignment = if props.bare then Enum.TextXAlignment.Left else Enum.TextXAlignment.Center,
 		TextWrapped = false,
+		outline = if props.bare then math.max(2, math.floor((props.TextSize or 26) * 0.11 + 0.5)) else nil,
+		TextColor3 = if props.bare then Color3.new(1, 1, 1) else nil,
 	})
 	return frame, label
 end
@@ -1027,6 +1305,136 @@ function Kit.toast(parent: Instance, props: { [string]: any }): Frame
 		Size = UDim2.fromScale(1, 1),
 	})
 	return frame
+end
+-- Close: an oversized art button over the top-right corner (a third outside), native danger icon otherwise.
+function Kit.closeButton(parent: Instance, onActivated: () -> (), size: number?): GuiButton
+	local n = math.max(48, size or 48)
+	local entry = Kit.artFor("close") or Kit.artFor("icon-close")
+	local btn: GuiButton
+	if entry then
+		btn = make("ImageButton", {
+			Name = "Close",
+			BackgroundTransparency = 1,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(1, -n / 6, 0, n / 6),
+			Size = UDim2.fromOffset(n, n),
+			ZIndex = 8,
+			Selectable = true,
+			Parent = parent,
+		})
+		Kit.applyArt(btn :: ImageButton, entry)
+		local scale = make("UIScale", { Parent = btn })
+		btn.MouseButton1Down:Connect(function()
+			Kit.tween(scale, 0.06, { Scale = active.motion.press })
+		end)
+		btn.MouseButton1Up:Connect(function()
+			Kit.tween(scale, 0.15, { Scale = 1 }, ease())
+		end)
+		btn.MouseLeave:Connect(function()
+			Kit.tween(scale, 0.15, { Scale = 1 }, ease())
+		end)
+		btn.Activated:Connect(function()
+			if Kit.onClick then
+				Kit.onClick()
+			end
+			onActivated()
+		end)
+	else
+		btn = Kit.iconButton(
+			parent,
+			{ Name = "Close", icon = "close", style = "danger", size = n, onActivated = onActivated }
+		)
+		btn.AnchorPoint = Vector2.new(0.5, 0.5)
+		btn.Position = UDim2.new(1, -n / 6, 0, n / 6)
+		btn.ZIndex = 8
+	end
+	return btn
+end
+-- A meter: recessed track and a fill that slides. Returns the track and a setter (fraction 0..1).
+function Kit.bar(parent: Instance, props: { [string]: any }): (Frame, (number) -> ())
+	local h = props.height or 24
+	local track = make("Frame", {
+		Name = props.Name or "Bar",
+		Size = props.Size or UDim2.fromOffset(props.width or 220, h),
+		Position = props.Position or UDim2.new(),
+		AnchorPoint = props.AnchorPoint or Vector2.zero,
+		BorderSizePixel = 0,
+		Parent = parent,
+	}, { Kit.corner(h / 2), Kit.stroke() })
+	local trackPlate = make(
+		"ImageLabel",
+		{ Name = "Plate", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = track }
+	)
+	local fill = make("ImageLabel", {
+		Name = "Fill",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(0, 1),
+		ZIndex = 2,
+		Parent = track,
+	}, { Kit.corner(h / 2) })
+	local minWidth = make("UISizeConstraint", { Parent = fill })
+	local fraction = props.value or 0
+	local function layout()
+		local a, f = roleArt("barTrack"), roleArt("barFill")
+		local inset = if a then 0 else 3
+		track.BackgroundTransparency = if a then 1 else 0
+		track.BackgroundColor3 = active.color.surfaceAlt;
+		(track:FindFirstChildOfClass("UIStroke") :: UIStroke).Enabled = a == nil
+		trackPlate.Visible = a ~= nil
+		if a then
+			Kit.applyArt(trackPlate, a)
+		end
+		fill.Position = UDim2.fromOffset(inset, inset)
+		fill.BackgroundTransparency = if f then 1 else 0
+		fill.BackgroundColor3 = props.color or active.color.secondary
+		fill.Image = ""
+		if f then
+			Kit.applyArt(fill, f)
+			if props.color then
+				fill.ImageColor3 = props.color
+			end
+		end
+		-- Scale-sized so ancestor UIScales don't matter; a sliced fill never gets narrower than its two caps.
+		fill.Size = UDim2.new(fraction, -inset * 2 * fraction, 1, -inset * 2)
+		minWidth.MinSize = Vector2.new(if f and f.slice and fraction > 0 then h else 0, 0)
+		fill.Visible = fraction > 0
+	end
+	bind(track, layout)
+	local function set(v: number)
+		fraction = math.clamp(v, 0, 1)
+		layout()
+	end
+	return track, set
+end
+-- A full-screen illustrated background (named art or the theme's `backdrop`), cropped to fill and dimmed by
+-- `dim` (0..1). Without art it is the theme scrim. Parent it to a ScreenGui whose ScreenInsets is None.
+function Kit.backdrop(parent: Instance, props: { [string]: any }?): GuiObject
+	local p = props or {}
+	local entry = Kit.artFor(p.art or "backdrop")
+	if not entry then
+		return Kit.scrim(parent, p)
+	end
+	local img = make("ImageLabel", {
+		Name = p.Name or "Backdrop",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		ScaleType = Enum.ScaleType.Crop,
+		Image = entry.image,
+		ZIndex = p.ZIndex or 1,
+		Parent = parent,
+	})
+	if (p.dim or 0) > 0 then
+		make("Frame", {
+			Name = "Dim",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = active.color.scrim,
+			BackgroundTransparency = 1 - p.dim,
+			BorderSizePixel = 0,
+			ZIndex = 2,
+			Parent = img,
+		})
+	end
+	return img
 end
 function Kit.pop(obj: GuiObject, visible: boolean, delay: number?)
 	local scale = obj:FindFirstChildOfClass("UIScale") or make("UIScale", { Parent = obj })

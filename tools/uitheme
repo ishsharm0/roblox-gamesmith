@@ -174,6 +174,22 @@ def sheet(themes, out, only=None):
     return made
 
 
+# Cap height / em of the button font in the browser (uiart metrics); sizes labels on plates (Kit.labelSize).
+CAP_HEIGHT = {"FredokaOne": 0.749, "LuckiestGuy": 0.718, "Bangers": 0.757, "Nunito": 0.714, "TitanOne": 0.726}
+
+
+def art_luau(a):
+    """One image role from uiart (theme["art"][role]) as a Luau table: image, size, slice, sliceScale, content, tile."""
+    parts = [f'image = {json.dumps(a["image"])}', "size = Vector2.new({}, {})".format(*a["size"])]
+    if "slice" in a:
+        parts += ["slice = Rect.new({}, {}, {}, {})".format(*a["slice"]), f'sliceScale = {a.get("sliceScale", 1)}']
+    if "content" in a:
+        parts.append("content = {{ {}, {}, {}, {} }}".format(*a["content"]))
+    if "tile" in a:
+        parts.append("tile = Vector2.new({}, {})".format(*a["tile"]))
+    return "{ " + ", ".join(parts) + " }"
+
+
 def luau(themes):
     def family(name):
         return FONT_CONTENT.get(name, f"rbxasset://fonts/families/{name}.json")
@@ -207,10 +223,17 @@ def luau(themes):
         o.append(f"\t\tbuttonScale = {bs},")
         o.append(f'\t\ttitleUpper = {"true" if ty["titleCase"] == "upper" else "false"},')
         o.append(f'\t\ttextStroke = {ty["textStroke"]},')
+        o.append(f'\t\tcapHeight = {ty.get("capHeight", CAP_HEIGHT.get(ty.get("button", ty["display"]), 0.72))},')
         o.append("\t},\n\tmotion = {")
         for k, v in t["motion"].items():
             o.append(f"\t\t{k} = {json.dumps(v)},")
-        o.append("\t},\n}\n")
+        o.append("\t},")
+        o.append("\tart = {" + ("" if t.get("art") else "},"))
+        if t.get("art"):
+            for role, a in sorted(t["art"].items()):
+                o.append(f"\t\t{role} = {art_luau(a)},")
+            o.append("\t},")
+        o.append("}\n")
     o.append("return Themes\n")
     return "\n".join(o)
 
