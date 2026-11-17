@@ -59,6 +59,7 @@ and why); the docs give the facts. When they disagree on a fact, the docs win: f
 | What's trending on Roblox, a game's stats and passes | `rbx-research` |
 | Reference gameplay: YouTube search, transcripts, frames | `yt-research` |
 | DevForum answers | `devforum` |
+| Draw UI art (frames, plates, titles, icons, backgrounds) to PNG + 9-slice manifest, upload, export to Luau | `uiart` (`references/ui-image-assets.md`) |
 | Upload assets with your own Open Cloud key | `rbxcloud` (`references/open-cloud.md`) |
 | Meshes from Blender, headless | `tools/blender/` (`references/blender-pipeline.md`) |
 
@@ -121,6 +122,7 @@ and why); the docs give the facts. When they disagree on a fact, the docs win: f
 | Particles, beams, trails, animation assets | `references/vfx.md` |
 | Character animation without assets (crouch, jump, flip, land) | `references/procedural-animation.md` + `templates/project/src/client/Poser.luau` |
 | UI and UX: screens, HUD, menus, flow | `references/ui-ux-style.md` (design), then `references/ui-engineering.md` (build); use `UiKit.luau` |
+| Image-based UI: 9-slice frames, button plates, text-art titles, drawn icons, backgrounds, mascots; padding numbers; `tools/uiart` | `references/ui-image-assets.md` |
 | Audio | `references/audio.md` |
 | Procedural geometry, model quality, proportions and construction | `references/geometry-quality.md` |
 | Original concepts, audience appeal, pacing and creative review | `references/creative-quality.md` |

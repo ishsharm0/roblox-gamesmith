@@ -1389,10 +1389,9 @@ function Kit.bar(parent: Instance, props: { [string]: any }): (Frame, (number) -
 		fill.BackgroundColor3 = props.color or active.color.secondary
 		fill.Image = ""
 		if f then
+			-- Draw the fill art light (near white): ImageColor3 then tints it to the bar's colour.
 			Kit.applyArt(fill, f)
-			if props.color then
-				fill.ImageColor3 = props.color
-			end
+			fill.ImageColor3 = props.color or active.color.secondary
 		end
 		-- Scale-sized so ancestor UIScales don't matter; a sliced fill never gets narrower than its two caps.
 		fill.Size = UDim2.new(fraction, -inset * 2 * fraction, 1, -inset * 2)

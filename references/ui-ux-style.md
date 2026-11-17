@@ -17,6 +17,15 @@ better". The screens it had are the catalogue of what not to ship:
 - modals that didn't dim what was behind them, and screens that appeared with no motion at all.
 The rebuild below fixed each one; the same fixes apply to any game.
 
+## Images first, and content-led buttons (2026-11-16 verdict)
+
+"UI is still kinda ugly ... needs to be a lot better with background images, way too much padding for a
+lot of buttons, use more images." Native frames alone were rejected. Make the frames, plates, titles,
+icons, backgrounds and mascot as images with `tools/uiart` and let the kit use them:
+`references/ui-image-assets.md`. Button numbers (they replace the 260x64 default below): label cap height
+50% of the face, side padding 0.4 x height, primary 52 / secondary 48 high, width hugs the content.
+HUD counters are a drawn icon + outlined number with no plate.
+
 ## The five rules
 
 1. **One kit, built once, used everywhere.** Tokens (ink, cream, primary, accent, reward, danger; a
@@ -50,7 +59,7 @@ viewport, not real-phone touch feel, console navigation or every aspect ratio. R
 | `Kit.Theme` | Ink #103440, cream #FFF9E8, primary lime #C4F25C, danger coral #FF7A84, info aqua #56D6CC, reward sun #FFC846, disabled #C4CABA; matching darker shades. Fredoka One display, Builder Sans Bold/ExtraBold body. Reference 844x390. |
 | `Kit.screen` | Persistent ScreenGui, CoreUISafeInsets, Sibling ZIndex, one root UIScale. Returns gui/root. Default HUD order 5, modals 10, feedback 20 in the shipped game. |
 | `Kit.panel` | Ink shadow at +10 / .72 transparency; cream face, radius 20, 4px ink border. Optional 52px ribbon, about 70% width, 30px display title, state-coloured aqua/sun/coral. Returns face; holder is `face.Parent`. Add a 48px close target overlapping the corner. |
-| `Kit.button` | Shadow → 6px darker lip → gradient face → inset gloss → icon/content row. Radius 16, border 3. Styles primary/secondary/accent/danger/reward. Default 260x64; content icon 28 with 8px gap. `Kit.setButton` sets interactability, selection and muted state. |
+| `Kit.button` | Image plate (theme art `button<Style>`, pressed, disabled) or native: shadow → lip → gradient face → gloss → icon/content row. Without `Size` it hugs its content: `height` (52 default), label cap 50% of the face (`Kit.labelSize`), side padding 0.4 x height, icon 60% of the face; `fill = true` for a full-width primary; an explicit `Size` keeps a fixed box. `Kit.setButton` sets interactability, selection and muted state. |
 | `Kit.iconButton` | 48px minimum, normally 52px; same layered face and selection ring. Keep 8–12px between targets. |
 | `Kit.pill` | 44px tall, radius 22, 3px border; overlapping 36px badge and 26px icon; 24–26px display number. |
 | `Kit.card` | Cream, radius 14, 3px border; 32px rarity band, 60px icon and 16px name. Usually 136px wide. Add details below, and put long collections inside a scroller. |
